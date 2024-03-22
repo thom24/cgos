@@ -4,6 +4,7 @@
  * Author: Thomas Richard <thomas.richard@bootlin.com>
  */
 #include <linux/dmi.h>
+#include <linux/mfd/core.h>
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
@@ -18,6 +19,14 @@
 #define GEN5_HCNM_REQUEST 0x01
 #define GEN5_HCNM_DATA    0x01
 
+#define GEN5_HCC_ACCESS 0x0C
+#define GEN5_HCC_STROBE 0x00
+#define GEN5_HCC_INDEX  0x02
+#define     GEN5_HCC_INDEX_CBI_MSK    0xFC
+#define     GEN5_HCC_INDEX_CBM_MSK    0x03
+#define     GEN5_HCC_INDEX_CBM_MAN8   0x00
+#define     GEN5_HCC_INDEX_CBM_AUTO32 0x03
+#define GEN5_HCC_DATA   0x04
 #define GEN5_HCC_ACCESS 0x0C
 
 
@@ -44,19 +53,32 @@
 #define CGOS_HCNM_FREE		GEN5_HCNM_FREE
 #define CGOS_HCNM_GAINED	GEN5_HCNM_GAINED
 
-#define CGOS_HCC_ACCESS		GEN5_HCC_ACCESS
+#define CGOS_HCC_ACCESS			GEN5_HCC_ACCESS
+#define CGOS_HCC_STROBE			GEN5_HCC_STROBE
+#define CGOS_HCC_INDEX			GEN5_HCC_INDEX
+#define CGOS_HCC_INDEX_CBI_MSK		GEN5_HCC_INDEX_CBI_MSK
+#define CGOS_HCC_INDEX_CBM_MSK		GEN5_HCC_INDEX_CBM_MSK
+#define CGOS_HCC_INDEX_CBM_MAN8		GEN5_HCC_INDEX_CBM_MAN8
+#define CGOS_HCC_INDEX_CBM_AUTO32	GEN5_HCC_INDEX_CBM_AUTO32
 
-static void cgos_get_hardware_mutex(struct cgos_device_data *cgos)
-{
-	do {
-		iowrite8(cgos->session_id, cgos->io_hcc + CGOS_HCC_ACCESS);
-	} while (ioread8(cgos->io_hcc + CGOS_HCC_ACCESS) != cgos->session_id);
-}
 
-static void cgos_release_hardware_mutex(struct cgos_device_data *cgos)
-{
-	iowrite8(cgos->session_id, cgos->io_hcc + CGOS_HCC_ACCESS);
-}
+#define CGOS_HCC_DATA   0x04
+
+
+#define CGOS_CGBC_ERR_BIT     7                                     /* error flag */
+
+#define CGOS_CGBC_BSY_BIT     7                             /* busy flag         */
+#define CGOS_CGBC_RDY_BIT     6                             /* ready flag        */
+#define CGOS_CGBC_STAT_MSK    ((1<<CGOS_CGBC_BSY_BIT)|(1<<CGOS_CGBC_RDY_BIT)) /* state msk */
+#define CGOS_CGBC_IDL_STAT    ((0<<CGOS_CGBC_BSY_BIT)|(0<<CGOS_CGBC_RDY_BIT)) /* IDLE      */
+#define CGOS_CGBC_BSY_STAT    ((1<<CGOS_CGBC_BSY_BIT)|(0<<CGOS_CGBC_RDY_BIT)) /* BUSY      */
+#define CGOS_CGBC_RDY_STAT    ((0<<CGOS_CGBC_BSY_BIT)|(1<<CGOS_CGBC_RDY_BIT)) /* READY     */
+#define CGOS_CGBC_ERR_STAT    ((1<<CGOS_CGBC_BSY_BIT)|(1<<CGOS_CGBC_RDY_BIT)) /* ERROR     */
+
+#define CGOS_CGBC_DAT_STAT    ((0<<CGOS_CGBC_ERR_BIT)|(0<<CGOS_CGBC_RDY_BIT)) /* DATA READY */
+
+#define CGOS_CGBC_DAT_CNT_MSK 0x1F                          /* data count        */
+#define CGOS_CGBC_ERR_COD_MSK 0x1F                          /* error code        */
 
 static int cgos_hcnm_detect_device(struct cgos_device_data *cgos)
 {
@@ -115,26 +137,195 @@ static void cgos_hcnm_release_session(struct cgos_device_data *cgos)
 {
 	cgos_hcnm_detect_device(cgos);
 
-	u8 ret = cgos_hcnm_command(cgos, cgos->session_id);
-
 	if (cgos_hcnm_command(cgos, cgos->session_id) != cgos->session_id)
 		dev_err(cgos->dev, "failed to release hcnm session\n");
 }
 
-static void cgos_get_mutex(struct cgos_device_data *cgos)
+static ssize_t cgos_version_show(struct device *dev,
+				 struct device_attribute *attr, char *buf)
 {
-	const struct cgos_platform_data *pdata = dev_get_platdata(cgos->dev);
+	struct cgos_device_data *cgos = dev_get_drvdata(dev);
 
-	mutex_lock(&cgos->lock);
-	pdata->get_hardware_mutex(cgos);
+	return sysfs_emit(buf, "%s\n", cgos->info.version);
 }
 
-static void cgos_release_mutex(struct cgos_device_data *cgos)
+static DEVICE_ATTR_RO(cgos_version);
+
+static struct attribute *cgos_attributes[] = {
+	&dev_attr_cgos_version.attr,
+	NULL
+};
+
+static const struct attribute_group cgos_attr_group = {
+	.attrs = cgos_attributes,
+};
+
+static int cgos_get_info(struct cgos_device_data *cgos)
+{
+	u8 cmd = CGOS_CGBC_CMD_GET_FW_REV;
+	u8 data[4], status;
+	int ret;
+
+	/* struct for the CGOS_CGBC_CMD_GET_FW_REV command is 4 bytes long
+	 * but in the code only 3 bytes are read
+	 */
+	if (cgos_command(cgos, &cmd, 1, &data[0], 4, &status))
+		return ret;
+
+	cgos->info.feature = data[0];
+	cgos->info.major = data[1];
+	cgos->info.minor = data[2];
+	ret = snprintf(cgos->info.version, sizeof(cgos->info.version), "CGBCP%c%c%c",
+		       cgos->info.feature, cgos->info.major,
+		       cgos->info.minor);
+
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
+static int cgos_detect_device(struct cgos_device_data *cgos)
+{
+	const struct cgos_platform_data *pdata = dev_get_platdata(cgos->dev);
+	int ret;
+
+	if (pdata->hcnm) {
+		ret = cgos_hcnm_create_session(cgos);
+		if (ret)
+			return ret;
+	}
+
+	ret = cgos_get_info(cgos);
+	if (ret)
+		return ret;
+
+	dev_info(cgos->dev, "Found Congatec Board Controller - %s\n",
+		 cgos->info.version);
+
+	return sysfs_create_group(&cgos->dev->kobj, &cgos_attr_group);
+}
+
+
+#define macro(x,y)			\
+({					\
+	int __loop, __ret;		\
+	__loop = 0x2000;			\
+	do {				\
+		x;			\
+		__loop--;		\
+	} while(y && __loop != 0);	\
+	if (!__loop)			\
+		__ret = -ETIMEDOUT;	\
+	else				\
+		__ret = 0;		\
+	__ret;				\
+})
+
+unsigned int cgos_command_generic(struct cgos_device_data *cgos,
+				  u8 *cmd, u8 cmd_size, u8 *data, u8 data_size, u8 *status)
+{
+	u8 checksum = 0, data_checksum = 0;
+	int mode_change = -1;
+	int ret, i;
+
+	mutex_lock(&cgos->lock);
+
+	/* request access */
+	ret = macro(iowrite8(cgos->session_id, cgos->io_hcc + CGOS_HCC_ACCESS),
+		    ioread8(cgos->io_hcc + CGOS_HCC_ACCESS) != cgos->session_id);
+	if (ret)
+		return ret;
+
+	/* write command packet */
+	ret = macro(, ioread8(cgos->io_hcc + CGOS_HCC_STROBE) != 0);
+
+	if (cmd_size <= 2) {
+		iowrite8(CGOS_HCC_INDEX_CBM_MAN8, cgos->io_hcc + CGOS_HCC_INDEX);
+	} else {
+		iowrite8(CGOS_HCC_INDEX_CBM_AUTO32, cgos->io_hcc + CGOS_HCC_INDEX);
+		if((cmd_size % 4) != 0x03)
+			mode_change = (cmd_size & 0xFFFC) - 1;
+	}
+
+	for (i = 0; i < cmd_size; i++) {
+		iowrite8(cmd[i] , cgos->io_hcc + GEN5_HCC_DATA + (i % 4));
+		checksum ^= cmd[i];
+		if (mode_change == i)
+			iowrite8((i + 1) | CGOS_HCC_INDEX_CBM_MAN8, cgos->io_hcc + CGOS_HCC_INDEX );
+	}
+
+	/* append checksum byte */
+	iowrite8(checksum, cgos->io_hcc + GEN5_HCC_DATA + (i % 4));
+
+	/* perform command strobe */
+	iowrite8(cgos->session_id, cgos->io_hcc + CGOS_HCC_STROBE);
+
+	/* rewind hcc buffer index */
+	iowrite8(CGOS_HCC_INDEX_CBM_AUTO32, cgos->io_hcc + CGOS_HCC_INDEX);
+
+	/* wait command completion */
+	ret = macro(,ioread8(cgos->io_hcc + CGOS_HCC_STROBE) != 0);
+	if (ret)
+		return ret;
+
+	/* check command status */
+	checksum = *status = ioread8(cgos->io_hcc + CGOS_HCC_DATA);
+	switch (*status & CGOS_CGBC_STAT_MSK)
+	{
+		case CGOS_CGBC_DAT_STAT:
+			if(*status > data_size)
+				*status = data_size;
+			for (i = 0; i < *status; i++) {
+				data[i] = ioread8(cgos->io_hcc + CGOS_HCC_DATA + ((i + 1) % 4));
+				checksum ^= data[i];
+			}
+			data_checksum = ioread8(cgos->io_hcc + CGOS_HCC_DATA + ((i + 1) % 4));
+			*status = *status & CGOS_CGBC_DAT_CNT_MSK;
+			break;
+		case CGOS_CGBC_ERR_STAT:
+		case CGOS_CGBC_RDY_STAT:
+			data_checksum = ioread8(cgos->io_hcc + CGOS_HCC_DATA + 1);
+			*status = *status & CGOS_CGBC_ERR_COD_MSK;
+			if ((*status & CGOS_CGBC_STAT_MSK) == CGOS_CGBC_ERR_STAT)
+				ret = -1;
+			break;
+		default:
+			data_checksum = ioread8(cgos->io_hcc + CGOS_HCC_DATA + 1);
+			*status = *status & CGOS_CGBC_ERR_COD_MSK;
+			ret = -1;
+			break;
+	}
+
+	/* release */
+	iowrite8(cgos->session_id, cgos->io_hcc + CGOS_HCC_ACCESS);
+
+	/* checksum verification */
+	if (ret == 0 && data_checksum != checksum)
+		ret = -1;
+
+	mutex_unlock(&cgos->lock);
+
+	return ret;
+}
+
+int gcos_command(struct cgos_device_data *cgos, u8 *cmd, u8 cmd_size, u8 *data, u8 data_size, u8 *status)
 {
 	const struct cgos_platform_data *pdata = dev_get_platdata(cgos->dev);
 
-	pdata->release_hardware_mutex(cgos);
-	mutex_unlock(&cgos->lock);
+	return pdata->command(cgos, cmd, cmd_size, data, data_size, status);
+}
+EXPORT_SYMBOL_GPL(cgos_command);
+
+static struct mfd_cell cgos_devs[] = {
+	{
+		.name = "cgos-wdt",
+	},
+};
+
+static int cgos_register_cells_generic(struct cgos_device_data *cgos)
+{
+	return mfd_add_devices(cgos->dev, -1, cgos_devs, ARRAY_SIZE(cgos_devs), NULL, 0, NULL);
 }
 
 static const struct cgos_platform_data cgos_platform_data_generic = {
@@ -148,13 +339,13 @@ static const struct cgos_platform_data cgos_platform_data_generic = {
 		.end    = CGOS_HCC_IO_END,
 		.flags  = IORESOURCE_IO,
 	},
-	.get_hardware_mutex = cgos_get_hardware_mutex,
-	.release_hardware_mutex = cgos_release_hardware_mutex,
+	.command = cgos_command_generic,
+	.register_cells = cgos_register_cells_generic,
 };
 
 static struct platform_device *cgos_pdev;
 
-static int cgos_create_platform_device(const struct dmi_system_id *id)
+static int cgos_create_platform_device_generic(const struct dmi_system_id *id)
 {
 	const struct cgos_platform_data *pdata = id->driver_data;
 	int ret;
@@ -187,6 +378,7 @@ static int cgos_probe(struct platform_device *pdev)
 	struct device *dev = &pdev->dev;
 	struct cgos_device_data *cgos;
 	struct resource *ioport;
+	int ret;
 	printk("%s: %d\n", __func__, __LINE__);
 
 	pdata = dev_get_platdata(dev);
@@ -210,7 +402,7 @@ static int cgos_probe(struct platform_device *pdev)
 		return -EINVAL;
 
 	cgos->io_hcc = devm_ioport_map(dev, ioport->start,
-					resource_size(ioport));
+				       resource_size(ioport));
 
 	if (!cgos->io_hcc)
 		return -ENOMEM;
@@ -219,16 +411,20 @@ static int cgos_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, cgos);
 
-	return cgos_hcnm_create_session(cgos);
+	return cgos_detect_device(cgos);
 }
 
 static void cgos_remove(struct platform_device *pdev)
 {
 	struct cgos_device_data *cgos = platform_get_drvdata(pdev);
+	const struct cgos_platform_data *pdata = dev_get_platdata(cgos->dev);
 
-	/* it fails, but it seems not to be called in the original driver */
-	if (cgos->session_id)
+	if (pdata->hcnm) {
+		/* it fails, but it seems not to be called in the original driver */
 		cgos_hcnm_release_session(cgos);
+	}
+
+	sysfs_remove_group(&cgos->dev->kobj, &cgos_attr_group);
 
 	printk("%s: %d\n", __func__, __LINE__);
 }
@@ -248,7 +444,7 @@ static const struct dmi_system_id cgos_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_BOARD_VENDOR, "congatec"),
 			DMI_MATCH(DMI_BOARD_NAME, "conga-SA7"),
 		},
-		.callback = cgos_create_platform_device,
+		.callback = cgos_create_platform_device_generic,
 		.driver_data = (void *)&cgos_platform_data_generic,
 	},
 	{}
