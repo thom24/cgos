@@ -80,6 +80,8 @@
 #define CGOS_CGBC_DAT_CNT_MSK 0x1F                          /* data count        */
 #define CGOS_CGBC_ERR_COD_MSK 0x1F                          /* error code        */
 
+static struct platform_device *cgos_pdev;
+
 static int cgos_hcnm_detect_device(struct cgos_device_data *cgos)
 {
 	int i;
@@ -141,76 +143,10 @@ static void cgos_hcnm_release_session(struct cgos_device_data *cgos)
 		dev_err(cgos->dev, "failed to release hcnm session\n");
 }
 
-static ssize_t cgos_version_show(struct device *dev,
-				 struct device_attribute *attr, char *buf)
-{
-	struct cgos_device_data *cgos = dev_get_drvdata(dev);
-
-	return sysfs_emit(buf, "%s\n", cgos->info.version);
-}
-
-static DEVICE_ATTR_RO(cgos_version);
-
-static struct attribute *cgos_attributes[] = {
-	&dev_attr_cgos_version.attr,
-	NULL
-};
-
-static const struct attribute_group cgos_attr_group = {
-	.attrs = cgos_attributes,
-};
-
-static int cgos_get_info(struct cgos_device_data *cgos)
-{
-	u8 cmd = CGOS_CGBC_CMD_GET_FW_REV;
-	u8 data[4], status;
-	int ret;
-
-	/* struct for the CGOS_CGBC_CMD_GET_FW_REV command is 4 bytes long
-	 * but in the code only 3 bytes are read
-	 */
-	if (cgos_command(cgos, &cmd, 1, &data[0], 4, &status))
-		return ret;
-
-	cgos->info.feature = data[0];
-	cgos->info.major = data[1];
-	cgos->info.minor = data[2];
-	ret = snprintf(cgos->info.version, sizeof(cgos->info.version), "CGBCP%c%c%c",
-		       cgos->info.feature, cgos->info.major,
-		       cgos->info.minor);
-
-	if (ret < 0)
-		return ret;
-
-	return 0;
-}
-
-static int cgos_detect_device(struct cgos_device_data *cgos)
-{
-	const struct cgos_platform_data *pdata = dev_get_platdata(cgos->dev);
-	int ret;
-
-	if (pdata->hcnm) {
-		ret = cgos_hcnm_create_session(cgos);
-		if (ret)
-			return ret;
-	}
-
-	ret = cgos_get_info(cgos);
-	if (ret)
-		return ret;
-
-	dev_info(cgos->dev, "Found Congatec Board Controller - %s\n",
-		 cgos->info.version);
-
-	return sysfs_create_group(&cgos->dev->kobj, &cgos_attr_group);
-}
-
-
 #define macro(x,y)			\
 ({					\
 	int __loop, __ret;		\
-	__loop = 0x2000;			\
+	__loop = 0x2000;		\
 	do {				\
 		x;			\
 		__loop--;		\
@@ -222,8 +158,8 @@ static int cgos_detect_device(struct cgos_device_data *cgos)
 	__ret;				\
 })
 
-unsigned int cgos_command_generic(struct cgos_device_data *cgos,
-				  u8 *cmd, u8 cmd_size, u8 *data, u8 data_size, u8 *status)
+int cgos_command_gen5(struct cgos_device_data *cgos,
+		      u8 *cmd, u8 cmd_size, u8 *data, u8 data_size, u8 *status)
 {
 	u8 checksum = 0, data_checksum = 0;
 	int mode_change = -1;
@@ -309,43 +245,44 @@ unsigned int cgos_command_generic(struct cgos_device_data *cgos,
 	return ret;
 }
 
-int gcos_command(struct cgos_device_data *cgos, u8 *cmd, u8 cmd_size, u8 *data, u8 data_size, u8 *status)
-{
-	const struct cgos_platform_data *pdata = dev_get_platdata(cgos->dev);
-
-	return pdata->command(cgos, cmd, cmd_size, data, data_size, status);
-}
-EXPORT_SYMBOL_GPL(cgos_command);
-
 static struct mfd_cell cgos_devs[] = {
 	{
 		.name = "cgos-wdt",
 	},
 };
 
-static int cgos_register_cells_generic(struct cgos_device_data *cgos)
+static int cgos_register_cells_gen5(struct cgos_device_data *cgos)
 {
 	return mfd_add_devices(cgos->dev, -1, cgos_devs, ARRAY_SIZE(cgos_devs), NULL, 0, NULL);
 }
 
-static const struct cgos_platform_data cgos_platform_data_generic = {
-	.ioresource_hcnm = {
-		.start  = CGOS_HCNM_IO_BASE,
-		.end    = CGOS_HCNM_IO_END,
-		.flags  = IORESOURCE_IO,
-	},
-	.ioresource_hcc	= {
-		.start  = CGOS_HCC_IO_BASE,
-		.end    = CGOS_HCC_IO_END,
-		.flags  = IORESOURCE_IO,
-	},
-	.command = cgos_command_generic,
-	.register_cells = cgos_register_cells_generic,
-};
+static int cgos_map_gen5(struct platform_device *pdev, struct cgos_device_data *cgos)
+{
+	struct device *dev = &pdev->dev;
+	struct resource *ioport;
 
-static struct platform_device *cgos_pdev;
+	ioport = platform_get_resource(pdev, IORESOURCE_IO, 0);
+	if (!ioport)
+		return -EINVAL;
 
-static int cgos_create_platform_device_generic(const struct dmi_system_id *id)
+	cgos->io_hcnm = devm_ioport_map(dev, ioport->start,
+					resource_size(ioport));
+	if (!cgos->io_hcnm)
+		return -ENOMEM;
+
+	ioport = platform_get_resource(pdev, IORESOURCE_IO, 1);
+	if (!ioport)
+		return -EINVAL;
+
+	cgos->io_hcc = devm_ioport_map(dev, ioport->start,
+				       resource_size(ioport));
+	if (!cgos->io_hcc)
+		return -ENOMEM;
+
+	return 0;
+}
+
+static int cgos_create_platform_device_gen5(const struct dmi_system_id *id)
 {
 	const struct cgos_platform_data *pdata = id->driver_data;
 	int ret;
@@ -372,14 +309,104 @@ err:
 	return ret;
 }
 
+static const struct cgos_platform_data cgos_platform_data_gen5 = {
+	.ioresource_hcnm = {
+		.start  = CGOS_HCNM_IO_BASE,
+		.end    = CGOS_HCNM_IO_END,
+		.flags  = IORESOURCE_IO,
+	},
+	.ioresource_hcc	= {
+		.start  = CGOS_HCC_IO_BASE,
+		.end    = CGOS_HCC_IO_END,
+		.flags  = IORESOURCE_IO,
+	},
+	.command = cgos_command_gen5,
+	.register_cells = cgos_register_cells_gen5,
+	.map = cgos_map_gen5,
+	.init = cgos_hcnm_create_session,
+	.close = cgos_hcnm_release_session,
+};
+
+static ssize_t cgos_version_show(struct device *dev,
+				 struct device_attribute *attr, char *buf)
+{
+	struct cgos_device_data *cgos = dev_get_drvdata(dev);
+
+	return sysfs_emit(buf, "%s\n", cgos->info.version);
+}
+
+static DEVICE_ATTR_RO(cgos_version);
+
+static struct attribute *cgos_attributes[] = {
+	&dev_attr_cgos_version.attr,
+	NULL
+};
+
+static const struct attribute_group cgos_attr_group = {
+	.attrs = cgos_attributes,
+};
+
+static int cgos_get_info(struct cgos_device_data *cgos)
+{
+	u8 cmd = CGOS_CGBC_CMD_GET_FW_REV;
+	u8 data[4], status;
+	int ret;
+
+	/* struct for the CGOS_CGBC_CMD_GET_FW_REV command is 4 bytes long
+	 * but in the code only 3 bytes are read
+	 */
+	ret = cgos_command(cgos, &cmd, 1, &data[0], 4, &status);
+	if (ret)
+		return ret;
+
+	cgos->info.feature = data[0];
+	cgos->info.major = data[1];
+	cgos->info.minor = data[2];
+	ret = snprintf(cgos->info.version, sizeof(cgos->info.version), "CGBCP%c%c%c",
+		       cgos->info.feature, cgos->info.major,
+		       cgos->info.minor);
+
+	if (ret < 0)
+		return ret;
+
+	return 0;
+}
+
+static int cgos_detect_device(struct cgos_device_data *cgos)
+{
+	const struct cgos_platform_data *pdata = dev_get_platdata(cgos->dev);
+	int ret;
+
+	if (pdata->init) {
+		ret = pdata->init(cgos);
+		if (ret)
+			return ret;
+	}
+
+	ret = cgos_get_info(cgos);
+	if (ret)
+		return ret;
+
+	dev_info(cgos->dev, "Found Congatec Board Controller - %s\n",
+		 cgos->info.version);
+
+	return sysfs_create_group(&cgos->dev->kobj, &cgos_attr_group);
+}
+
+int cgos_command(struct cgos_device_data *cgos, u8 *cmd, u8 cmd_size, u8 *data, u8 data_size, u8 *status)
+{
+	const struct cgos_platform_data *pdata = dev_get_platdata(cgos->dev);
+
+	return pdata->command(cgos, cmd, cmd_size, data, data_size, status);
+}
+EXPORT_SYMBOL_GPL(cgos_command);
+
 static int cgos_probe(struct platform_device *pdev)
 {
 	const struct cgos_platform_data *pdata;
 	struct device *dev = &pdev->dev;
 	struct cgos_device_data *cgos;
-	struct resource *ioport;
 	int ret;
-	printk("%s: %d\n", __func__, __LINE__);
 
 	pdata = dev_get_platdata(dev);
 
@@ -387,25 +414,9 @@ static int cgos_probe(struct platform_device *pdev)
 	if (!cgos)
 		return -ENOMEM;
 
-	ioport = platform_get_resource(pdev, IORESOURCE_IO, 0);
-	if (!ioport)
-		return -EINVAL;
-
-	cgos->io_hcnm = devm_ioport_map(dev, ioport->start,
-					resource_size(ioport));
-
-	if (!cgos->io_hcnm)
-		return -ENOMEM;
-
-	ioport = platform_get_resource(pdev, IORESOURCE_IO, 1);
-	if (!ioport)
-		return -EINVAL;
-
-	cgos->io_hcc = devm_ioport_map(dev, ioport->start,
-				       resource_size(ioport));
-
-	if (!cgos->io_hcc)
-		return -ENOMEM;
+	ret = pdata->map(pdev, cgos);
+	if (ret)
+		return ret;
 
 	cgos->dev = dev;
 
@@ -419,14 +430,12 @@ static void cgos_remove(struct platform_device *pdev)
 	struct cgos_device_data *cgos = platform_get_drvdata(pdev);
 	const struct cgos_platform_data *pdata = dev_get_platdata(cgos->dev);
 
-	if (pdata->hcnm) {
+	if (pdata->close) {
 		/* it fails, but it seems not to be called in the original driver */
-		cgos_hcnm_release_session(cgos);
+		pdata->close(cgos);
 	}
 
 	sysfs_remove_group(&cgos->dev->kobj, &cgos_attr_group);
-
-	printk("%s: %d\n", __func__, __LINE__);
 }
 
 static struct platform_driver cgos_driver = {
@@ -444,8 +453,8 @@ static const struct dmi_system_id cgos_dmi_table[] __initconst = {
 			DMI_MATCH(DMI_BOARD_VENDOR, "congatec"),
 			DMI_MATCH(DMI_BOARD_NAME, "conga-SA7"),
 		},
-		.callback = cgos_create_platform_device_generic,
-		.driver_data = (void *)&cgos_platform_data_generic,
+		.callback = cgos_create_platform_device_gen5,
+		.driver_data = (void *)&cgos_platform_data_gen5,
 	},
 	{}
 };
