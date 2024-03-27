@@ -242,6 +242,7 @@ int cgos_command_gen5(struct cgos_device_data *cgos,
 
 	mutex_unlock(&cgos->lock);
 
+	printk("cgos_command returns %d\n", ret);
 	return ret;
 }
 
@@ -372,6 +373,13 @@ static int cgos_get_info(struct cgos_device_data *cgos)
 	return 0;
 }
 
+static int cgos_register_cells(struct cgos_device_data *pld)
+{
+	const struct cgos_platform_data *pdata = dev_get_platdata(pld->dev);
+
+	return pdata->register_cells(pld);
+}
+
 static int cgos_detect_device(struct cgos_device_data *cgos)
 {
 	const struct cgos_platform_data *pdata = dev_get_platdata(cgos->dev);
@@ -390,7 +398,15 @@ static int cgos_detect_device(struct cgos_device_data *cgos)
 	dev_info(cgos->dev, "Found Congatec Board Controller - %s\n",
 		 cgos->info.version);
 
-	return sysfs_create_group(&cgos->dev->kobj, &cgos_attr_group);
+	ret = sysfs_create_group(&cgos->dev->kobj, &cgos_attr_group);
+	if (ret)
+		return ret;
+
+	ret = cgos_register_cells(cgos);
+	if (ret)
+		sysfs_remove_group(&cgos->dev->kobj, &cgos_attr_group);
+
+	return ret;
 }
 
 int cgos_command(struct cgos_device_data *cgos, u8 *cmd, u8 cmd_size, u8 *data, u8 data_size, u8 *status)
@@ -436,6 +452,8 @@ static void cgos_remove(struct platform_device *pdev)
 	}
 
 	sysfs_remove_group(&cgos->dev->kobj, &cgos_attr_group);
+
+	mfd_remove_devices(&pdev->dev);
 }
 
 static struct platform_driver cgos_driver = {

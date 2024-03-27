@@ -1,7 +1,8 @@
 ifneq ($(KERNELRELEASE),)
 # kbuild part of makefile
-obj-m  := cgos.o
-cgos-y := cgos-core.o
+obj-m  := cgos.o cgos-wdt.o
+cgos-y := cgos-core.o 
+cgos-wdt-y := cgos_wdt.o
 
 else
 # normal makefile
