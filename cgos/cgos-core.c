@@ -10,15 +10,6 @@
 #include <linux/io.h>
 #include "cgos.h"
 
-#define GEN5_HCNM_STATUS  0x02
-#define GEN5_HCNM_ACCESS  0x04
-#define GEN5_HCNM_FREE    0x0003
-#define GEN5_HCNM_GAINED  0x00000000
-#define GEN5_HCNM_COMMAND 0x00
-#define GEN5_HCNM_IDLE    0x00
-#define GEN5_HCNM_REQUEST 0x01
-#define GEN5_HCNM_DATA    0x01
-
 #define GEN5_HCC_ACCESS 0x0C
 #define GEN5_HCC_STROBE 0x00
 #define GEN5_HCC_INDEX  0x02
@@ -29,88 +20,72 @@
 #define GEN5_HCC_DATA   0x04
 #define GEN5_HCC_ACCESS 0x0C
 
+#define CGOS_GEN5_HCNM_IO_BASE	0x0E20
+#define CGOS_GEN5_HCNM_IO_SIZE	0x0010
 
-#define HCNM_BASE 0x0E20
-#define HCNM_SIZE 0x0010
+#define CGOS_GEN5_HCC_IO_BASE	0x0E00
+#define CGOS_GEN5_HCC_IO_SIZE	0x0010
 
-#define HCC0_BASE 0x0E00
-#define HCC0_SIZE 0x0010
+#define CGOS_GEN5_HCNM_CMD	0x00
+#define		CGOS_GEN5_HCNM_CMD_IDLE		0x00
+#define		CGOS_GEN5_HCNM_CMD_REQUEST	0x01
+#define CGOS_GEN5_HCNM_DATA	0x01
+#define CGOS_GEN5_HCNM_STATUS	0x02
+#define		CGOS_GEN5_HCNM_STATUS_FREE	0x03
+#define CGOS_GEN5_HCNM_ACCESS	0x04
+#define		CGOS_GEN5_HCMN_ACCESS_GAINED	0x00
 
-#define CGOS_HCNM_IO_BASE HCNM_BASE
-#define CGOS_HCNM_IO_END  HCNM_BASE + HCNM_SIZE
+#define CGOS_GEN5_HCC_STROBE	0x00
+#define CGOS_GEN5_HCC_INDEX	0x02
+#define		CGOS_GEN5_HCC_INDEX_CBI_MSK	0xFC
+#define		CGOS_GEN5_HCC_INDEX_CBM_MSK	0x03
+#define		CGOS_GEN5_HCC_INDEX_CBM_MAN8	0x00
+#define		CGOS_GEN5_HCC_INDEX_CBM_AUTO32	0x03
+#define CGOS_GEN5_HCC_DATA	0x04
+#define CGOS_GEN5_HCC_ACCESS	0x0C
 
-#define CGOS_HCC_IO_BASE HCC0_BASE
-#define CGOS_HCC_IO_END  HCC0_BASE + HCC0_SIZE
+#define CGOS_STATUS_DATA_READY	0x00
+#define CGOS_STATUS_CMD_READY	BIT(6)
+#define CGOS_STATUS_ERROR	BIT(7)
+#define CGOS_STATUS_MASK	(CGOS_STATUS_CMD_READY | CGOS_STATUS_ERROR)
 
-#define CGOS_HCNM_COMMAND	GEN5_HCNM_COMMAND
-#define CGOS_HCNM_DATA		GEN5_HCNM_DATA
-#define CGOS_HCNM_STATUS	GEN5_HCNM_STATUS
-#define CGOS_HCNM_ACCESS	GEN5_HCNM_ACCESS
-
-#define CGOS_HCNM_IDLE		GEN5_HCNM_IDLE
-#define CGOS_HCNM_REQUEST	GEN5_HCNM_REQUEST
-
-#define CGOS_HCNM_FREE		GEN5_HCNM_FREE
-#define CGOS_HCNM_GAINED	GEN5_HCNM_GAINED
-
-#define CGOS_HCC_ACCESS			GEN5_HCC_ACCESS
-#define CGOS_HCC_STROBE			GEN5_HCC_STROBE
-#define CGOS_HCC_INDEX			GEN5_HCC_INDEX
-#define CGOS_HCC_INDEX_CBI_MSK		GEN5_HCC_INDEX_CBI_MSK
-#define CGOS_HCC_INDEX_CBM_MSK		GEN5_HCC_INDEX_CBM_MSK
-#define CGOS_HCC_INDEX_CBM_MAN8		GEN5_HCC_INDEX_CBM_MAN8
-#define CGOS_HCC_INDEX_CBM_AUTO32	GEN5_HCC_INDEX_CBM_AUTO32
-
-
-#define CGOS_HCC_DATA   0x04
-
-
-#define CGOS_CGBC_ERR_BIT     7                                     /* error flag */
-
-#define CGOS_CGBC_BSY_BIT     7                             /* busy flag         */
-#define CGOS_CGBC_RDY_BIT     6                             /* ready flag        */
-#define CGOS_CGBC_STAT_MSK    ((1<<CGOS_CGBC_BSY_BIT)|(1<<CGOS_CGBC_RDY_BIT)) /* state msk */
-#define CGOS_CGBC_IDL_STAT    ((0<<CGOS_CGBC_BSY_BIT)|(0<<CGOS_CGBC_RDY_BIT)) /* IDLE      */
-#define CGOS_CGBC_BSY_STAT    ((1<<CGOS_CGBC_BSY_BIT)|(0<<CGOS_CGBC_RDY_BIT)) /* BUSY      */
-#define CGOS_CGBC_RDY_STAT    ((0<<CGOS_CGBC_BSY_BIT)|(1<<CGOS_CGBC_RDY_BIT)) /* READY     */
-#define CGOS_CGBC_ERR_STAT    ((1<<CGOS_CGBC_BSY_BIT)|(1<<CGOS_CGBC_RDY_BIT)) /* ERROR     */
-
-#define CGOS_CGBC_DAT_STAT    ((0<<CGOS_CGBC_ERR_BIT)|(0<<CGOS_CGBC_RDY_BIT)) /* DATA READY */
-
-#define CGOS_CGBC_DAT_CNT_MSK 0x1F                          /* data count        */
-#define CGOS_CGBC_ERR_COD_MSK 0x1F                          /* error code        */
+#define CGOS_DATA_COUNT_MASK	0x1F
+#define CGOS_ERROR_CODE_MASK	0x1F
 
 static struct platform_device *cgos_pdev;
 
 static int cgos_hcnm_detect_device(struct cgos_device_data *cgos)
 {
+	int ret = 0;
 	int i;
 
 	for (i = 0; i < 100000 ; i++) {
-		if (ioread16(cgos->io_hcnm + CGOS_HCNM_STATUS) == CGOS_HCNM_FREE) {
-			if (!ioread32(cgos->io_hcnm + GEN5_HCNM_ACCESS))
-				return 0;
-			else
-				break;
+		if (ioread16(cgos->io_hcnm + CGOS_GEN5_HCNM_STATUS) == CGOS_GEN5_HCNM_STATUS_FREE) {
+			if (ioread32(cgos->io_hcnm + CGOS_GEN5_HCNM_ACCESS))
+				ret = -ENODEV;
+
+			break;
 		}
 	}
 
-	return -ENODEV;
+	return ret;
 }
 
 static u8 cgos_hcnm_command(struct cgos_device_data *cgos, u8 cmd)
 {
 	u8 ret;
 
-	while (ioread8(cgos->io_hcnm + CGOS_HCNM_COMMAND) != CGOS_HCNM_IDLE)
+	while (ioread8(cgos->io_hcnm + CGOS_GEN5_HCNM_CMD) != CGOS_GEN5_HCNM_CMD_IDLE)
+		;
 
-	iowrite8(cmd, cgos->io_hcnm + CGOS_HCNM_COMMAND);
+	iowrite8(cmd, cgos->io_hcnm + CGOS_GEN5_HCNM_CMD);
 
-	while (ioread8(cgos->io_hcnm + CGOS_HCNM_COMMAND) != CGOS_HCNM_IDLE)
+	while (ioread8(cgos->io_hcnm + CGOS_GEN5_HCNM_CMD) != CGOS_GEN5_HCNM_CMD_IDLE)
+		;
 
-	ret = ioread8(cgos->io_hcnm + GEN5_HCNM_DATA);
+	ret = ioread8(cgos->io_hcnm + CGOS_GEN5_HCNM_DATA);
 
-	iowrite8(CGOS_HCNM_FREE, cgos->io_hcnm + CGOS_HCNM_STATUS);
+	iowrite8(CGOS_GEN5_HCNM_STATUS_FREE, cgos->io_hcnm + CGOS_GEN5_HCNM_STATUS);
 
 	return ret;
 }
@@ -122,12 +97,12 @@ static int cgos_hcnm_create_session(struct cgos_device_data *cgos)
 	if (ret)
 		return dev_err_probe(cgos->dev, ret, "device not found\n");
 
-	cgos->session_id = cgos_hcnm_command(cgos, CGOS_HCNM_REQUEST);
+	cgos->session_id = cgos_hcnm_command(cgos, CGOS_GEN5_HCNM_CMD_REQUEST);
 
 	/* we got a bad session id for the controller, we cannot communicate
 	 * with it.
 	 */
-	if ((cgos->session_id < 0x02) || ( cgos->session_id > 0xFE)) {
+	if ((cgos->session_id < 0x02) || (cgos->session_id > 0xFE)) {
 		cgos->session_id = 0;
 		return dev_err_probe(cgos->dev, -ENODEV, "failed to create a hcnm session\n");
 	}
@@ -143,14 +118,14 @@ static void cgos_hcnm_release_session(struct cgos_device_data *cgos)
 		dev_err(cgos->dev, "failed to release hcnm session\n");
 }
 
-#define macro(x,y)			\
+#define exec_until(x, y)		\
 ({					\
 	int __loop, __ret;		\
 	__loop = 0x2000;		\
 	do {				\
 		x;			\
 		__loop--;		\
-	} while(y && __loop != 0);	\
+	} while (y && __loop != 0);	\
 	if (!__loop)			\
 		__ret = -ETIMEDOUT;	\
 	else				\
@@ -168,73 +143,72 @@ int cgos_command_gen5(struct cgos_device_data *cgos,
 	mutex_lock(&cgos->lock);
 
 	/* request access */
-	ret = macro(iowrite8(cgos->session_id, cgos->io_hcc + CGOS_HCC_ACCESS),
-		    ioread8(cgos->io_hcc + CGOS_HCC_ACCESS) != cgos->session_id);
+	ret = exec_until(iowrite8(cgos->session_id, cgos->io_hcc + CGOS_GEN5_HCC_ACCESS),
+			 ioread8(cgos->io_hcc + CGOS_GEN5_HCC_ACCESS) != cgos->session_id);
 	if (ret)
 		return ret;
 
 	/* write command packet */
-	ret = macro(, ioread8(cgos->io_hcc + CGOS_HCC_STROBE) != 0);
+	ret = exec_until(, ioread8(cgos->io_hcc + CGOS_GEN5_HCC_STROBE) != 0);
 
 	if (cmd_size <= 2) {
-		iowrite8(CGOS_HCC_INDEX_CBM_MAN8, cgos->io_hcc + CGOS_HCC_INDEX);
+		iowrite8(CGOS_GEN5_HCC_INDEX_CBM_MAN8, cgos->io_hcc + CGOS_GEN5_HCC_INDEX);
 	} else {
-		iowrite8(CGOS_HCC_INDEX_CBM_AUTO32, cgos->io_hcc + CGOS_HCC_INDEX);
-		if((cmd_size % 4) != 0x03)
+		iowrite8(CGOS_GEN5_HCC_INDEX_CBM_AUTO32, cgos->io_hcc + CGOS_GEN5_HCC_INDEX);
+		if ((cmd_size % 4) != 0x03)
 			mode_change = (cmd_size & 0xFFFC) - 1;
 	}
 
 	for (i = 0; i < cmd_size; i++) {
-		iowrite8(cmd[i] , cgos->io_hcc + GEN5_HCC_DATA + (i % 4));
+		iowrite8(cmd[i], cgos->io_hcc + CGOS_GEN5_HCC_DATA + (i % 4));
 		checksum ^= cmd[i];
 		if (mode_change == i)
-			iowrite8((i + 1) | CGOS_HCC_INDEX_CBM_MAN8, cgos->io_hcc + CGOS_HCC_INDEX );
+			iowrite8((i + 1) | CGOS_GEN5_HCC_INDEX_CBM_MAN8, cgos->io_hcc + CGOS_GEN5_HCC_INDEX);
 	}
 
 	/* append checksum byte */
-	iowrite8(checksum, cgos->io_hcc + GEN5_HCC_DATA + (i % 4));
+	iowrite8(checksum, cgos->io_hcc + CGOS_GEN5_HCC_DATA + (i % 4));
 
 	/* perform command strobe */
-	iowrite8(cgos->session_id, cgos->io_hcc + CGOS_HCC_STROBE);
+	iowrite8(cgos->session_id, cgos->io_hcc + CGOS_GEN5_HCC_STROBE);
 
 	/* rewind hcc buffer index */
-	iowrite8(CGOS_HCC_INDEX_CBM_AUTO32, cgos->io_hcc + CGOS_HCC_INDEX);
+	iowrite8(CGOS_GEN5_HCC_INDEX_CBM_AUTO32, cgos->io_hcc + CGOS_GEN5_HCC_INDEX);
 
 	/* wait command completion */
-	ret = macro(,ioread8(cgos->io_hcc + CGOS_HCC_STROBE) != 0);
+	ret = exec_until(, ioread8(cgos->io_hcc + CGOS_GEN5_HCC_STROBE) != 0);
 	if (ret)
 		return ret;
 
 	/* check command status */
-	checksum = *status = ioread8(cgos->io_hcc + CGOS_HCC_DATA);
-	switch (*status & CGOS_CGBC_STAT_MSK)
-	{
-		case CGOS_CGBC_DAT_STAT:
-			if(*status > data_size)
-				*status = data_size;
-			for (i = 0; i < *status; i++) {
-				data[i] = ioread8(cgos->io_hcc + CGOS_HCC_DATA + ((i + 1) % 4));
-				checksum ^= data[i];
-			}
-			data_checksum = ioread8(cgos->io_hcc + CGOS_HCC_DATA + ((i + 1) % 4));
-			*status = *status & CGOS_CGBC_DAT_CNT_MSK;
-			break;
-		case CGOS_CGBC_ERR_STAT:
-		case CGOS_CGBC_RDY_STAT:
-			data_checksum = ioread8(cgos->io_hcc + CGOS_HCC_DATA + 1);
-			*status = *status & CGOS_CGBC_ERR_COD_MSK;
-			if ((*status & CGOS_CGBC_STAT_MSK) == CGOS_CGBC_ERR_STAT)
-				ret = -1;
-			break;
-		default:
-			data_checksum = ioread8(cgos->io_hcc + CGOS_HCC_DATA + 1);
-			*status = *status & CGOS_CGBC_ERR_COD_MSK;
+	checksum = *status = ioread8(cgos->io_hcc + CGOS_GEN5_HCC_DATA);
+	switch (*status & CGOS_STATUS_MASK) {
+	case CGOS_STATUS_DATA_READY:
+		if (*status > data_size)
+			*status = data_size;
+		for (i = 0; i < *status; i++) {
+			data[i] = ioread8(cgos->io_hcc + CGOS_GEN5_HCC_DATA + ((i + 1) % 4));
+			checksum ^= data[i];
+		}
+		data_checksum = ioread8(cgos->io_hcc + CGOS_GEN5_HCC_DATA + ((i + 1) % 4));
+		*status = *status & CGOS_DATA_COUNT_MASK;
+		break;
+	case CGOS_STATUS_ERROR:
+	case CGOS_STATUS_CMD_READY:
+		data_checksum = ioread8(cgos->io_hcc + CGOS_GEN5_HCC_DATA + 1);
+		*status = *status & CGOS_ERROR_CODE_MASK;
+		if ((*status & CGOS_STATUS_MASK) == (CGOS_STATUS_ERROR))
 			ret = -1;
-			break;
+		break;
+	default:
+		data_checksum = ioread8(cgos->io_hcc + CGOS_GEN5_HCC_DATA + 1);
+		*status = *status & CGOS_ERROR_CODE_MASK;
+		ret = -1;
+		break;
 	}
 
 	/* release */
-	iowrite8(cgos->session_id, cgos->io_hcc + CGOS_HCC_ACCESS);
+	iowrite8(cgos->session_id, cgos->io_hcc + CGOS_GEN5_HCC_ACCESS);
 
 	/* checksum verification */
 	if (ret == 0 && data_checksum != checksum)
@@ -242,7 +216,6 @@ int cgos_command_gen5(struct cgos_device_data *cgos,
 
 	mutex_unlock(&cgos->lock);
 
-	printk("cgos_command returns %d\n", ret);
 	return ret;
 }
 
@@ -312,13 +285,13 @@ err:
 
 static const struct cgos_platform_data cgos_platform_data_gen5 = {
 	.ioresource_hcnm = {
-		.start  = CGOS_HCNM_IO_BASE,
-		.end    = CGOS_HCNM_IO_END,
+		.start  = CGOS_GEN5_HCNM_IO_BASE,
+		.end    = CGOS_GEN5_HCNM_IO_BASE + CGOS_GEN5_HCNM_IO_SIZE,
 		.flags  = IORESOURCE_IO,
 	},
 	.ioresource_hcc	= {
-		.start  = CGOS_HCC_IO_BASE,
-		.end    = CGOS_HCC_IO_END,
+		.start  = CGOS_GEN5_HCC_IO_BASE,
+		.end    = CGOS_GEN5_HCC_IO_BASE + CGOS_GEN5_HCC_IO_SIZE,
 		.flags  = IORESOURCE_IO,
 	},
 	.command = cgos_command_gen5,

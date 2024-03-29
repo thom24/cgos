@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/*
+ *
+ * Author: Thomas Richard <thomas.richard@bootlin.com>
+ */
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/uaccess.h>
@@ -23,28 +28,28 @@ enum {
 
 static unsigned int timeout = CGOS_WDT_DEFAULT_TIMEOUT;
 module_param(timeout, uint, 0);
-MODULE_PARM_DESC(timeout, "Watchdog timeout in seconds. (>=0, default="
-		 __MODULE_STRING(CGOS_WDT_DEFAULT_TIMEOUT) ")");
+MODULE_PARM_DESC(timeout,
+		 "Watchdog timeout in seconds. (>=0, default=" __MODULE_STRING(CGOS_WDT_DEFAULT_TIMEOUT) ")");
 
 static unsigned int pretimeout = CGOS_WDT_DEFAULT_PRETIMEOUT;
 module_param(pretimeout, uint, 0);
-MODULE_PARM_DESC(pretimeout, "Watchdog pretimeout in seconds. (>=0, default="
-		 __MODULE_STRING(CGOS_WDT_DEFAULT_PRETIMEOUT) ")");
+MODULE_PARM_DESC(pretimeout,
+		 "Watchdog pretimeout in seconds. (>=0, default=" __MODULE_STRING(CGOS_WDT_DEFAULT_PRETIMEOUT) ")");
 
 static unsigned int timeout_action = ACTION_RESET;
 module_param(timeout_action, uint, 0);
-MODULE_PARM_DESC(timeout_action, "Watchdog timeout action"
-		 "(irq=0, smi=1, reset=2, button=3, default=2");
+MODULE_PARM_DESC(timeout_action,
+		 "Watchdog timeout action (irq=0, smi=1, reset=2, button=3, default=2");
 
 static unsigned int pretimeout_action = ACTION_SMI;
 module_param(pretimeout_action, uint, 0);
-MODULE_PARM_DESC(pretimeout_action, "Watchdog pretimeout action"
-		 "(irq=0, smi=1, reset=2, button=3, default=1");
+MODULE_PARM_DESC(pretimeout_action,
+		 "Watchdog pretimeout action (irq=0, smi=1, reset=2, button=3, default=1");
 
 static bool nowayout = WATCHDOG_NOWAYOUT;
 module_param(nowayout, bool, 0);
-MODULE_PARM_DESC(nowayout, "Watchdog cannot be stopped once started (default="
-		 __MODULE_STRING(WATCHDOG_NOWAYOUT) ")");
+MODULE_PARM_DESC(nowayout,
+		 "Watchdog cannot be stopped once started (default=" __MODULE_STRING(WATCHDOG_NOWAYOUT) ")");
 
 struct cgos_wdt_data {
 	struct cgos_device_data	*cgos;
@@ -56,14 +61,11 @@ struct cgos_wdt_data {
 
 static int cgos_wdt_start(struct watchdog_device *wdd)
 {
-	printk("%s: %d\n", __func__, __LINE__);
 	struct cgos_wdt_data *wdt_data = watchdog_get_drvdata(wdd);
 	struct cgos_device_data *cgos = wdt_data->cgos;
 	u8 cmd[15], status;
 	int ret;
 
-	printk("%s: start with timeout=%d pretimeout=%d actiont=%d actionpt=%d\n",
-	       __func__, wdd->timeout, wdd->pretimeout, wdt_data->timeout_action, wdt_data->pretimeout_action);
 	cmd[0]	= CGOS_WDT_CMD_INIT;
 	cmd[1]	= CGOS_WDT_MODE_SINGLE_EVENT;
 	if (wdd->pretimeout > 0) {
@@ -98,7 +100,6 @@ static int cgos_wdt_start(struct watchdog_device *wdd)
 
 static int cgos_wdt_stop(struct watchdog_device *wdd)
 {
-	printk("%s: %d\n", __func__, __LINE__);
 	struct cgos_wdt_data *wdt_data = watchdog_get_drvdata(wdd);
 	struct cgos_device_data *cgos = wdt_data->cgos;
 	u8 cmd[15], status;
@@ -118,7 +119,6 @@ static int cgos_wdt_stop(struct watchdog_device *wdd)
 
 static int cgos_wdt_keepalive(struct watchdog_device *wdd)
 {
-	printk("%s: %d\n", __func__, __LINE__);
 	struct cgos_wdt_data *wdt_data = watchdog_get_drvdata(wdd);
 	struct cgos_device_data *cgos = wdt_data->cgos;
 	u8 cmd = CGOS_WDT_CMD_TRIGGER;
@@ -130,7 +130,6 @@ static int cgos_wdt_keepalive(struct watchdog_device *wdd)
 static int cgos_wdt_set_pretimeout(struct watchdog_device *wdd,
 				   unsigned int pretimeout)
 {
-	printk("%s: %d\n", __func__, __LINE__);
 	struct cgos_wdt_data *wdt_data = watchdog_get_drvdata(wdd);
 
 	if (pretimeout > wdd->timeout)
@@ -147,7 +146,6 @@ static int cgos_wdt_set_pretimeout(struct watchdog_device *wdd,
 static int cgos_wdt_set_timeout(struct watchdog_device *wdd,
 				unsigned int timeout)
 {
-	printk("%s: %d\n", __func__, __LINE__);
 	struct cgos_wdt_data *wdt_data = watchdog_get_drvdata(wdd);
 
 	if (timeout < wdd->timeout) {
@@ -165,15 +163,14 @@ static int cgos_wdt_set_timeout(struct watchdog_device *wdd,
 static void cgos_wdt_set_actions(struct watchdog_device *wdd,
 				 unsigned int timeout_action, unsigned int pretimeout_action)
 {
-	printk("%s: %d\n", __func__, __LINE__);
 	struct cgos_wdt_data *wdt_data = watchdog_get_drvdata(wdd);
+
 	if (timeout_action < 0 || timeout_action > ACTION_BUTTON) {
-		dev_warn(wdd->parent, 
+		dev_warn(wdd->parent,
 			 "invalid timeout action. Set default action (%d)",
 			 ACTION_RESET);
 		wdt_data->timeout_action = ACTION_RESET;
-	}
-	else
+	} else
 		wdt_data->timeout_action = timeout_action;
 
 	if (pretimeout_action < 0 || pretimeout_action > ACTION_BUTTON) {
@@ -181,8 +178,7 @@ static void cgos_wdt_set_actions(struct watchdog_device *wdd,
 			 "invalid pretimeout action. Set default action (%d)",
 			 ACTION_SMI);
 		wdt_data->pretimeout_action = ACTION_RESET;
-	}
-	else
+	} else
 		wdt_data->pretimeout_action = pretimeout_action;
 }
 
@@ -197,23 +193,21 @@ static const struct watchdog_info cgos_wdt_info = {
 static long cgos_wdt_ioctl(struct watchdog_device *wdd,
 			   unsigned int cmd, unsigned long arg)
 {
-	printk("%s: %d\n", __func__, __LINE__);
-	struct cgos_wdt_data *wdt_data = watchdog_get_drvdata(wdd);
 	void __user *argp = (void __user *)arg;
 	unsigned int pretimeout;
 	int ret = -ENOIOCTLCMD;
-	int __user *p = argp;
 
 	switch (cmd) {
-		case WDIOC_GETSUPPORT:
-			return copy_to_user(argp, &cgos_wdt_info, sizeof(cgos_wdt_info)) ? -EFAULT : 0;
-		case WDIOC_SETPRETIMEOUT:
-			if (copy_from_user(&pretimeout, argp, sizeof(pretimeout)))
-				return -EFAULT;
-			if (cgos_wdt_set_pretimeout(wdd, pretimeout))
-				return -EINVAL;
-			break;
-		default:
+	case WDIOC_GETSUPPORT:
+		return copy_to_user(argp, &cgos_wdt_info, sizeof(cgos_wdt_info)) ? -EFAULT : 0;
+	case WDIOC_SETPRETIMEOUT:
+		if (copy_from_user(&pretimeout, argp, sizeof(pretimeout)))
+			return -EFAULT;
+		if (cgos_wdt_set_pretimeout(wdd, pretimeout))
+			return -EINVAL;
+		break;
+	default:
+		break;
 	}
 
 	return ret;
@@ -257,13 +251,11 @@ static int cgos_wdt_probe(struct platform_device *pdev)
 	platform_set_drvdata(pdev, wdt_data);
 	watchdog_stop_on_reboot(wdd);
 	watchdog_stop_on_unregister(wdd);
-	printk("%s: %d\n", __func__, __LINE__);
 
 	ret = devm_watchdog_register_device(dev, wdd);
 	if (ret)
 		return ret;
 
-	printk("%s: %d\n", __func__, __LINE__);
 	dev_info(dev, "Watchdog registered with %ds timeout\n", wdd->timeout);
 
 	return 0;
