@@ -46,7 +46,7 @@
 
 #define CGOS_STATUS_DATA_READY	0x00
 #define CGOS_STATUS_CMD_READY	BIT(6)
-#define CGOS_STATUS_ERROR	BIT(7)
+#define CGOS_STATUS_ERROR	BIT(7) | BIT(6)
 #define CGOS_STATUS_MASK	(CGOS_STATUS_CMD_READY | CGOS_STATUS_ERROR)
 
 #define CGOS_DATA_COUNT_MASK	0x1F
@@ -162,8 +162,9 @@ int cgos_command_gen5(struct cgos_device_data *cgos,
 	for (i = 0; i < cmd_size; i++) {
 		iowrite8(cmd[i], cgos->io_hcc + CGOS_GEN5_HCC_DATA + (i % 4));
 		checksum ^= cmd[i];
-		if (mode_change == i)
+		if (mode_change == i){
 			iowrite8((i + 1) | CGOS_GEN5_HCC_INDEX_CBM_MAN8, cgos->io_hcc + CGOS_GEN5_HCC_INDEX);
+		}
 	}
 
 	/* append checksum byte */
@@ -184,6 +185,7 @@ int cgos_command_gen5(struct cgos_device_data *cgos,
 	checksum = *status = ioread8(cgos->io_hcc + CGOS_GEN5_HCC_DATA);
 	switch (*status & CGOS_STATUS_MASK) {
 	case CGOS_STATUS_DATA_READY:
+		printk("%s: %d\n: CGOS_STATUS_DATA_READY", __func__, __LINE__);
 		if (*status > data_size)
 			*status = data_size;
 		for (i = 0; i < *status; i++) {
@@ -195,28 +197,39 @@ int cgos_command_gen5(struct cgos_device_data *cgos,
 		break;
 	case CGOS_STATUS_ERROR:
 	case CGOS_STATUS_CMD_READY:
+		printk("%s: %d: CGOS_STATUS_CMD_READY\n", __func__, __LINE__);
 		data_checksum = ioread8(cgos->io_hcc + CGOS_GEN5_HCC_DATA + 1);
 		*status = *status & CGOS_ERROR_CODE_MASK;
-		if ((*status & CGOS_STATUS_MASK) == (CGOS_STATUS_ERROR))
+		if ((*status & CGOS_STATUS_MASK) == (CGOS_STATUS_ERROR)) {
+			printk("%s: %d: -EIO\n", __func__, __LINE__);
 			ret = -EIO;
+		}
 		break;
 	default:
+		printk("%s: %d\n: default", __func__, __LINE__);
+		printk("%s: %d: -EIO: status=%x status_mask=%lx\n", __func__, __LINE__, *status, CGOS_STATUS_MASK);
 		data_checksum = ioread8(cgos->io_hcc + CGOS_GEN5_HCC_DATA + 1);
 		*status = *status & CGOS_ERROR_CODE_MASK;
+		printk("%s: %d: -EIO\n", __func__, __LINE__);
 		ret = -EIO;
 		break;
 	}
 
 	/* checksum verification */
-	if (ret == 0 && data_checksum != checksum)
+	if (ret == 0 && data_checksum != checksum) {
+		printk("%s: %d: -EIO\n", __func__, __LINE__);
 		ret = -EIO;
+	}
 
 release:
 	/* release */
+	printk("%s: %d\n", __func__, __LINE__);
 	iowrite8(cgos->session_id, cgos->io_hcc + CGOS_GEN5_HCC_ACCESS);
 
+	printk("%s: %d\n", __func__, __LINE__);
 out:
 	mutex_unlock(&cgos->lock);
+	printk("%s: %d\n", __func__, __LINE__);
 
 	return ret;
 }
@@ -227,6 +240,9 @@ static struct mfd_cell cgos_devs[] = {
 	},
 	{
 		.name = "cgos-gpio",
+	},
+	{
+		.name = "cgos-i2c",
 	},
 };
 
