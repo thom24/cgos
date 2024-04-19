@@ -123,8 +123,8 @@ static int cgos_i2c_xfer_msg(struct i2c_adapter *adap)
 	struct cgos_i2c_data *i2c = i2c_get_adapdata(adap);
 	struct cgos_device_data *cgos = i2c->cgos;
 	struct i2c_msg *msg = i2c->msg;
-	u8 cmd[5], status;
-	int ret = 0;
+	u8 cmd[4 + 32], status;
+	int ret = 0, i;
 
 	printk("CgosI2CReadRegisterRaw_BC\n");
 	printk("%s: %d: addr = %x\n", __func__, __LINE__, msg->addr);
@@ -148,13 +148,15 @@ static int cgos_i2c_xfer_msg(struct i2c_adapter *adap)
 		cmd[1] |= CGOS_I2C_STOP;
 
 	if (i2c->state == STATE_WRITE) {
-		cmd[1] |= 2;
+		cmd[1] |= (1 + msg->len);
 		cmd[2] = 0x00; //size read
 		cmd[4] = msg->buf[0];
+		for (i = 0; i < msg->len; i++)
+			cmd[4 + i] = msg->buf[i];
 
 		while(cgos_i2c_get_status(adap) == CGOS_I2C_STAT_BUSY){}
 
-		ret =  cgos_command(cgos, &cmd[0], 5, NULL, 0, &status);
+		ret =  cgos_command(cgos, &cmd[0], 4 + msg->len, NULL, 0, &status);
 		if (!ret) {
 			i2c->msg++;
 			i2c->nmsgs--;
