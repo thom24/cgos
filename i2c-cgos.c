@@ -35,10 +35,8 @@ enum {
 	STATE_ERROR,
 };
 
-struct cgos_i2c_data {
-	struct cgos_device_data	*cgos;
-	struct device		*dev;
-	struct i2c_adapter	adap;
+struct i2c_algo_cgos_data {
+	int			bus_id;
 	struct i2c_msg		*msg;
 	int			nmsgs;
 	int			pos;
@@ -46,17 +44,16 @@ struct cgos_i2c_data {
 };
 
 
-static int bus = 4;
-
 static int cgos_i2c_get_status(struct i2c_adapter *adap)
 {
-	struct cgos_i2c_data *i2c = i2c_get_adapdata(adap);
-	u8 cmd = CGOS_I2C_CMD_STAT | bus;// | (u8) (0x00010000 & ~0x07); /* bus 0 */
+	struct cgos_device_data *cgos = i2c_get_adapdata(adap);
+	struct i2c_algo_cgos_data *algo_data = adap->algo_data;
+	u8 cmd = CGOS_I2C_CMD_STAT | algo_data->bus_id;// | (u8) (0x00010000 & ~0x07); /* bus 0 */
 	u8 status;
 	int ret;
 
 	printk("%s: %d\n", __func__, __LINE__);
-	ret = cgos_command(i2c->cgos, &cmd, 1, NULL, 0, &status);
+	ret = cgos_command(cgos, &cmd, 1, NULL, 0, &status);
 	printk("%s: %d: ret= %d\n", __func__, __LINE__, ret);
 	if (ret)
 		return ret;
@@ -125,53 +122,53 @@ static int cgos_i2c_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg)
 
 static int cgos_i2c_xfer_msg(struct i2c_adapter *adap)
 {
-	struct cgos_i2c_data *i2c = i2c_get_adapdata(adap);
-	struct cgos_device_data *cgos = i2c->cgos;
-	struct i2c_msg *msg = i2c->msg;
+	struct cgos_device_data *cgos = i2c_get_adapdata(adap);
+	struct i2c_algo_cgos_data *algo_data = adap->algo_data;
+	struct i2c_msg *msg = algo_data->msg;
 	u8 cmd[4 + 32], status;
 	int ret = 0, len, i;
 
 //	printk("%s: %d: addr = %x\n", __func__, __LINE__, msg->addr);
-	printk("%s: %d: nbmsg = %d, msg_len = %d, pos = %d, flag_read = %d\n", __func__, __LINE__, i2c->nmsgs, msg->len, i2c->pos, (msg->flags & I2C_M_RD));
+	printk("%s: %d: nbmsg = %d, msg_len = %d, pos = %d, flag_read = %d\n", __func__, __LINE__, algo_data->nmsgs, msg->len, algo_data->pos, (msg->flags & I2C_M_RD));
 //	printk("%s: %d: msg->buf[0] = %x msg->len = %d flag_read=%d\n", __func__, __LINE__, msg->buf[0], msg->len, (msg->flags & I2C_M_RD));
 
-	if (i2c->state == STATE_DONE)
+	if (algo_data->state == STATE_DONE)
 		return ret;
 
-	cmd[0] = CGOS_I2C_CMD_START | bus;//| 0x00010000; /* bus 0 */
+	cmd[0] = CGOS_I2C_CMD_START | algo_data->bus_id;//| 0x00010000; /* bus 0 */
 
-	if (i2c->state == STATE_INIT || i2c->state == STATE_WRITE) {
+	if (algo_data->state == STATE_INIT || algo_data->state == STATE_WRITE) {
 		cmd[1] = CGOS_I2C_START;
-		i2c->state = (msg->flags & I2C_M_RD) ? STATE_READ : STATE_WRITE;
+		algo_data->state = (msg->flags & I2C_M_RD) ? STATE_READ : STATE_WRITE;
 		printk("STATE = %s\n", (msg->flags & I2C_M_RD) ? "STATE_READ" : "STATE_WRITE");
 	} else
 		cmd[1] = 0x00;
 
 	cmd[3] = i2c_8bit_addr_from_msg(msg);
 
-	if (msg->len - i2c->pos > 32)
+	if (msg->len - algo_data->pos > 32)
 		len = 32;
 	else {
-		len = msg->len - i2c->pos;
+		len = msg->len - algo_data->pos;
 
-		if (i2c->nmsgs == 1)
+		if (algo_data->nmsgs == 1)
 			cmd[1] |= CGOS_I2C_STOP;
 	}
 
-	if (i2c->state == STATE_WRITE) {
+	if (algo_data->state == STATE_WRITE) {
 		cmd[1] |= (1 + len);
 		cmd[2] = 0x00; //size read
 		cmd[4] = msg->buf[0];
 		for (i = 0; i < len; i++)
-			cmd[4 + i] = msg->buf[i2c->pos + i];
+			cmd[4 + i] = msg->buf[algo_data->pos + i];
 
 		while(cgos_i2c_get_status(adap) == CGOS_I2C_STAT_BUSY){}
 
 		ret =  cgos_command(cgos, &cmd[0], 4 + len, NULL, 0, &status);
-	} else if (i2c->state == STATE_READ) {
+	} else if (algo_data->state == STATE_READ) {
 		cmd[1] |= 1;
 
-		if (i2c->nmsgs == 1 && msg->len - i2c->pos <= 32)
+		if (algo_data->nmsgs == 1 && msg->len - algo_data->pos <= 32)
 			cmd[2] = len;
 		else
 			cmd[2] = len | CGOS_I2C_LAST_ACK;//0x01; //size read
@@ -182,23 +179,23 @@ static int cgos_i2c_xfer_msg(struct i2c_adapter *adap)
 		if (ret)
 			goto end;
 
-		cmd[0] = CGOS_I2C_CMD_DATA | bus;
+		cmd[0] = CGOS_I2C_CMD_DATA | algo_data->bus_id;
 		while(cgos_i2c_get_status(adap) == CGOS_I2C_STAT_BUSY){}
 
-		ret = cgos_command(cgos, &cmd[0], 1, msg->buf + i2c->pos, len, &status);
+		ret = cgos_command(cgos, &cmd[0], 1, msg->buf + algo_data->pos, len, &status);
 	}
 
-	if (!ret && (i2c->state == STATE_WRITE || i2c->state == STATE_READ)) {
-		if (len == (msg->len - i2c->pos)) {
-			i2c->msg++;
-			i2c->nmsgs--;
-			i2c->pos = 0;
+	if (!ret && (algo_data->state == STATE_WRITE || algo_data->state == STATE_READ)) {
+		if (len == (msg->len - algo_data->pos)) {
+			algo_data->msg++;
+			algo_data->nmsgs--;
+			algo_data->pos = 0;
 		} else
-			i2c->pos += len;
+			algo_data->pos += len;
 	}
 
-	if (i2c->nmsgs == 0)
-		i2c->state = STATE_DONE;
+	if (algo_data->nmsgs == 0)
+		algo_data->state = STATE_DONE;
 end:
 	return ret;
 }
@@ -206,41 +203,53 @@ end:
 
 static int cgos_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num)
 {
-	struct cgos_i2c_data *i2c = i2c_get_adapdata(adap);
+	struct i2c_algo_cgos_data *algo_data = adap->algo_data;
 	unsigned long timeout = jiffies + HZ;
 	int ret;
 
-	i2c->state = STATE_INIT;
-	i2c->msg = msgs;
-	i2c->nmsgs = num;
-	i2c->pos = 0;
+	algo_data->state = STATE_INIT;
+	algo_data->msg = msgs;
+	algo_data->nmsgs = num;
+	algo_data->pos = 0;
 
 	printk("%s: %d: msg=%d\n", __func__, __LINE__, num);
 	while (time_before(jiffies, timeout)) {
 		ret = cgos_i2c_xfer_msg(adap);
 
-		if (i2c->state == STATE_DONE || i2c->state == STATE_ERROR)
-			return (i2c->state == STATE_DONE) ? num : ret;
+		if (algo_data->state == STATE_DONE || algo_data->state == STATE_ERROR)
+			return (algo_data->state == STATE_DONE) ? num : ret;
 
 		if (ret == 0)
 			timeout = jiffies + HZ;
 	}
 
-	i2c->state = STATE_ERROR;
+	algo_data->state = STATE_ERROR;
 
 	return -ETIMEDOUT;
 }
 
-static int cgos_i2c_device_init(struct i2c_adapter *adap)
+static int cgos_i2c_device_init(struct platform_device *pdev, struct i2c_adapter *adap)
 {
-	struct cgos_i2c_data *i2c = i2c_get_adapdata(adap);
-	struct cgos_device_data *cgos = i2c->cgos;
+	struct i2c_algo_cgos_data *algo_data = adap->algo_data;
+	struct device *dev = &pdev->dev;
+	struct cgos_device_data *cgos = dev_get_drvdata(dev->parent);
 	u8 cmd[2], data, status;
+	int ret;
+
+	adap->dev.parent = dev;
+
+	i2c_set_adapdata(adap, cgos);
 
 	cmd[0] = CGOS_I2C_CMD_SPEED | 0;
-	cmd[1] = CGOS_I2C_FREQ_UNIT_100KHZ | bus;
+	cmd[1] = CGOS_I2C_FREQ_UNIT_100KHZ | algo_data->bus_id;
 
-	return cgos_command(cgos, &cmd[0], 2, &data, 1, &status);
+	ret = cgos_command(cgos, &cmd[0], 2, &data, 1, &status);
+	if (ret)
+		return dev_err_probe(&adap->dev, ret, "Failed to initialize I2C bus %s",
+				     adap->name);
+
+	dev_info(dev, "%s initialized at %dkHz\n",adap->name, 1000000);
+	return i2c_add_numbered_adapter(adap);
 }
 
 static u32 cgos_i2c_func(struct i2c_adapter *adap)
@@ -253,52 +262,51 @@ static const struct i2c_algorithm cgos_i2c_algorithm = {
 	.functionality	= cgos_i2c_func,
 };
 
-static const struct i2c_adapter cgos_i2c_adapter = {
-	.owner		= THIS_MODULE,
-	.name		= "i2c-cgos",
-	.class		= I2C_CLASS_DEPRECATED,
-	.algo		= &cgos_i2c_algorithm,
+static struct i2c_algo_cgos_data cgos_i2c_algo_data[2] = {
+	{ .bus_id = 0 },
+	{ .bus_id = 4 },
+};
+
+static struct i2c_adapter cgos_i2c_adapter[2] = {
+	{
+		.owner		= THIS_MODULE,
+		.name		= "CGOS Primary I2C adapter",
+		.class		= I2C_CLASS_DEPRECATED,
+		.algo		= &cgos_i2c_algorithm,
+		.algo_data	= &cgos_i2c_algo_data[0],
+		.nr		= -1,
+	},
+	{
+		.owner		= THIS_MODULE,
+		.name		= "CGOS DDC I2C adapter",
+		.class		= I2C_CLASS_DEPRECATED,
+		.algo		= &cgos_i2c_algorithm,
+		.algo_data	= &cgos_i2c_algo_data[1],
+		.nr		= -1,
+	},
 };
 
 static int cgos_i2c_probe(struct platform_device *pdev)
 {
-	struct device *dev = &pdev->dev;
-	struct cgos_device_data *cgos = dev_get_drvdata(dev->parent);
-	struct cgos_i2c_data *i2c;
 	int ret;
 
-	i2c = devm_kzalloc(dev, sizeof(*i2c), GFP_KERNEL);
-	if (!i2c)
-		return -ENOMEM;
-
-	i2c->cgos = cgos;
-	i2c->dev = &pdev->dev;
-	i2c->adap = cgos_i2c_adapter;
-	i2c->adap.dev.parent = &pdev->dev;
-	i2c_set_adapdata(&i2c->adap, i2c);
-	platform_set_drvdata(pdev, i2c);
-
-	ret = cgos_i2c_device_init(&i2c->adap);
+	ret = cgos_i2c_device_init(pdev, &cgos_i2c_adapter[0]);
 	if (ret)
 		return ret;
 
-	i2c->adap.nr = -1;
-	ret = i2c_add_numbered_adapter(&i2c->adap);
-	if (ret)
+	ret = cgos_i2c_device_init(pdev, &cgos_i2c_adapter[1]);
+	if (ret) {
+		i2c_del_adapter(&cgos_i2c_adapter[0]);
 		return ret;
-
-	dev_info(i2c->dev, "I2C bus initialized at %dkHz\n",
-		 1000000);
+	}
 
 	return 0;
 }
 
 static void cgos_i2c_remove(struct platform_device *pdev)
 {
-	struct cgos_i2c_data *i2c = platform_get_drvdata(pdev);
-
-	/* remove adapter & data */
-	i2c_del_adapter(&i2c->adap);
+	i2c_del_adapter(&cgos_i2c_adapter[0]);
+	i2c_del_adapter(&cgos_i2c_adapter[1]);
 }
 
 static struct platform_driver cgos_i2c_driver = {
