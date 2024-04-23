@@ -22,6 +22,7 @@
 #define CGOS_I2C_START	0x80
 #define CGOS_I2C_STOP	0x40
 
+#define CGOS_I2C_LAST_ACK  0x80    /* send ACK on last read byte */
 
 #define CGOS_I2C_FREQ_UNIT_100KHZ	0xC0
 
@@ -40,13 +41,17 @@ struct cgos_i2c_data {
 	struct i2c_adapter	adap;
 	struct i2c_msg		*msg;
 	int			nmsgs;
+	int			pos;
 	int			state;
 };
+
+
+static int bus = 4;
 
 static int cgos_i2c_get_status(struct i2c_adapter *adap)
 {
 	struct cgos_i2c_data *i2c = i2c_get_adapdata(adap);
-	u8 cmd = CGOS_I2C_CMD_STAT | 4;// | (u8) (0x00010000 & ~0x07); /* bus 0 */
+	u8 cmd = CGOS_I2C_CMD_STAT | bus;// | (u8) (0x00010000 & ~0x07); /* bus 0 */
 	u8 status;
 	int ret;
 
@@ -124,16 +129,16 @@ static int cgos_i2c_xfer_msg(struct i2c_adapter *adap)
 	struct cgos_device_data *cgos = i2c->cgos;
 	struct i2c_msg *msg = i2c->msg;
 	u8 cmd[4 + 32], status;
-	int ret = 0, i;
+	int ret = 0, len, i;
 
-	printk("CgosI2CReadRegisterRaw_BC\n");
-	printk("%s: %d: addr = %x\n", __func__, __LINE__, msg->addr);
-	printk("%s: %d: msg->buf[0] = %x msg->len = %d flag_read=%d\n", __func__, __LINE__, msg->buf[0], msg->len, (msg->flags & I2C_M_RD));
+//	printk("%s: %d: addr = %x\n", __func__, __LINE__, msg->addr);
+	printk("%s: %d: nbmsg = %d, msg_len = %d, pos = %d, flag_read = %d\n", __func__, __LINE__, i2c->nmsgs, msg->len, i2c->pos, (msg->flags & I2C_M_RD));
+//	printk("%s: %d: msg->buf[0] = %x msg->len = %d flag_read=%d\n", __func__, __LINE__, msg->buf[0], msg->len, (msg->flags & I2C_M_RD));
 
 	if (i2c->state == STATE_DONE)
 		return ret;
 
-	cmd[0] = CGOS_I2C_CMD_START | 4;//| 0x00010000; /* bus 0 */
+	cmd[0] = CGOS_I2C_CMD_START | bus;//| 0x00010000; /* bus 0 */
 
 	if (i2c->state == STATE_INIT || i2c->state == STATE_WRITE) {
 		cmd[1] = CGOS_I2C_START;
@@ -144,26 +149,32 @@ static int cgos_i2c_xfer_msg(struct i2c_adapter *adap)
 
 	cmd[3] = i2c_8bit_addr_from_msg(msg);
 
-	if (i2c->nmsgs == 1)
-		cmd[1] |= CGOS_I2C_STOP;
+	if (msg->len - i2c->pos > 32)
+		len = 32;
+	else {
+		len = msg->len - i2c->pos;
+
+		if (i2c->nmsgs == 1)
+			cmd[1] |= CGOS_I2C_STOP;
+	}
 
 	if (i2c->state == STATE_WRITE) {
-		cmd[1] |= (1 + msg->len);
+		cmd[1] |= (1 + len);
 		cmd[2] = 0x00; //size read
 		cmd[4] = msg->buf[0];
-		for (i = 0; i < msg->len; i++)
-			cmd[4 + i] = msg->buf[i];
+		for (i = 0; i < len; i++)
+			cmd[4 + i] = msg->buf[i2c->pos + i];
 
 		while(cgos_i2c_get_status(adap) == CGOS_I2C_STAT_BUSY){}
 
-		ret =  cgos_command(cgos, &cmd[0], 4 + msg->len, NULL, 0, &status);
-		if (!ret) {
-			i2c->msg++;
-			i2c->nmsgs--;
-		}
+		ret =  cgos_command(cgos, &cmd[0], 4 + len, NULL, 0, &status);
 	} else if (i2c->state == STATE_READ) {
 		cmd[1] |= 1;
-		cmd[2] = msg->len;//0x01; //size read
+
+		if (i2c->nmsgs == 1 && msg->len - i2c->pos <= 32)
+			cmd[2] = len;
+		else
+			cmd[2] = len | CGOS_I2C_LAST_ACK;//0x01; //size read
 
 		while(cgos_i2c_get_status(adap) == CGOS_I2C_STAT_BUSY){}
 
@@ -171,14 +182,19 @@ static int cgos_i2c_xfer_msg(struct i2c_adapter *adap)
 		if (ret)
 			goto end;
 
-		cmd[0] = CGOS_I2C_CMD_DATA | 4;
+		cmd[0] = CGOS_I2C_CMD_DATA | bus;
 		while(cgos_i2c_get_status(adap) == CGOS_I2C_STAT_BUSY){}
 
-		ret = cgos_command(cgos, &cmd[0], 1, msg->buf, msg->len, &status);
-		if (!ret) {
+		ret = cgos_command(cgos, &cmd[0], 1, msg->buf + i2c->pos, len, &status);
+	}
+
+	if (!ret && (i2c->state == STATE_WRITE || i2c->state == STATE_READ)) {
+		if (len == (msg->len - i2c->pos)) {
 			i2c->msg++;
 			i2c->nmsgs--;
-		}
+			i2c->pos = 0;
+		} else
+			i2c->pos += len;
 	}
 
 	if (i2c->nmsgs == 0)
@@ -197,6 +213,7 @@ static int cgos_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num
 	i2c->state = STATE_INIT;
 	i2c->msg = msgs;
 	i2c->nmsgs = num;
+	i2c->pos = 0;
 
 	printk("%s: %d: msg=%d\n", __func__, __LINE__, num);
 	while (time_before(jiffies, timeout)) {
@@ -221,7 +238,7 @@ static int cgos_i2c_device_init(struct i2c_adapter *adap)
 	u8 cmd[2], data, status;
 
 	cmd[0] = CGOS_I2C_CMD_SPEED | 0;
-	cmd[1] = CGOS_I2C_FREQ_UNIT_100KHZ | 4;
+	cmd[1] = CGOS_I2C_FREQ_UNIT_100KHZ | bus;
 
 	return cgos_command(cgos, &cmd[0], 2, &data, 1, &status);
 }
