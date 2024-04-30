@@ -46,7 +46,6 @@ struct i2c_algo_cgos_data {
 	int			state;
 };
 
-
 static int cgos_i2c_get_status(struct i2c_adapter *adap)
 {
 	struct cgos_device_data *cgos = i2c_get_adapdata(adap);
@@ -55,73 +54,12 @@ static int cgos_i2c_get_status(struct i2c_adapter *adap)
 	u8 status;
 	int ret;
 
-	printk("%s: %d\n", __func__, __LINE__);
 	ret = cgos_command(cgos, &cmd, 1, NULL, 0, &status);
-	printk("%s: %d: ret= %d\n", __func__, __LINE__, ret);
 	if (ret)
 		return ret;
 
-	printk("%s: %d: status=%x\n", __func__, __LINE__, status);
 	return status;
 }
-
-#if 0
-static int cgos_i2c_xfer_msg(struct i2c_adapter *adap, struct i2c_msg *msg)
-{
-	struct cgos_i2c_data *i2c = i2c_get_adapdata(adap);
-	struct cgos_device_data *cgos = i2c->cgos;
-	u8 cmd[4], status;
-	int ret;
-
-	printk("%s: %d: addr = %x\n", __func__, __LINE__, msg->addr);
-	cmd[0] = CGOS_I2C_CMD_START |4;//| 0x00010000; /* bus 0 */
-	cmd[1] = CGOS_I2C_START | 1;
-	cmd[2] = 0;
-	cmd[3] = 0xA0 & 0xFE;
-
-	ret = cgos_command(cgos, &cmd[0], 4, NULL, 0, &status);
-	if (ret)
-		return ret;
-
-	printk("%s: %d\n", __func__, __LINE__);
-	do {
-		ret = cgos_i2c_get_status(adap);
-		if (ret < 0)
-			return ret;
-	} while(ret != CGOS_I2C_STAT_IDL);
-
-	printk("%s: %d\n", __func__, __LINE__);
-	cmd[0] = CGOS_I2C_CMD_START | 4;// | 0x00010000; /* bus 0 */
-	cmd[1] = CGOS_I2C_START | 1;
-	cmd[1] |= CGOS_I2C_STOP;
-	cmd[2] = msg->len;
-	cmd[3] = msg->addr | 0x01;
-
-	printk("%s: %d\n", __func__, __LINE__);
-	cgos_command(cgos, &cmd[0], 4, NULL, 0, &status);
-	if (ret)
-		return ret;
-
-	do {
-		ret = cgos_i2c_get_status(adap);
-		if (ret < 0)
-			return ret;
-	} while(ret != CGOS_I2C_STAT_IDL);
-
-	printk("%s: %d\n", __func__, __LINE__);
-	if (ret == CGOS_I2C_STAT_DAT) {
-		cmd[0] = CGOS_I2C_CMD_DATA | 4;
-		ret = cgos_command(cgos, &cmd[0], 1, msg->buf, msg->len & 0x3F, &status);
-		if (ret)
-			return ret;
-
-	printk("%s: %d: msg=%x\n", __func__, __LINE__, msg->buf[0]);
-	}
-
-	printk("%s: %d\n", __func__, __LINE__);
-	return 0;
-}
-#endif
 
 static int cgos_i2c_xfer_msg(struct i2c_adapter *adap)
 {
@@ -130,10 +68,6 @@ static int cgos_i2c_xfer_msg(struct i2c_adapter *adap)
 	struct i2c_msg *msg = algo_data->msg;
 	u8 cmd[4 + 32], status;
 	int ret = 0, len, i;
-
-//	printk("%s: %d: addr = %x\n", __func__, __LINE__, msg->addr);
-	printk("%s: %d: nbmsg = %d, msg_len = %d, pos = %d, flag_read = %d\n", __func__, __LINE__, algo_data->nmsgs, msg->len, algo_data->pos, (msg->flags & I2C_M_RD));
-//	printk("%s: %d: msg->buf[0] = %x msg->len = %d flag_read=%d\n", __func__, __LINE__, msg->buf[0], msg->len, (msg->flags & I2C_M_RD));
 
 	if (algo_data->state == STATE_DONE)
 		return ret;
@@ -215,7 +149,6 @@ static int cgos_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num
 	algo_data->nmsgs = num;
 	algo_data->pos = 0;
 
-	printk("%s: %d: msg=%d\n", __func__, __LINE__, num);
 	while (time_before(jiffies, timeout)) {
 		ret = cgos_i2c_xfer_msg(adap);
 
@@ -251,7 +184,7 @@ static int cgos_i2c_device_init(struct platform_device *pdev, struct i2c_adapter
 		return dev_err_probe(&adap->dev, ret, "Failed to initialize I2C bus %s",
 				     adap->name);
 
-	dev_info(dev, "%s initialized at %dkHz\n",adap->name, 1000000);
+	dev_info(dev, "%s initialized at %dkHz\n",adap->name, 100);
 	return i2c_add_numbered_adapter(adap);
 }
 
