@@ -190,7 +190,7 @@ static int cgos_i2c_device_init(struct platform_device *pdev, struct i2c_adapter
 
 static u32 cgos_i2c_func(struct i2c_adapter *adap)
 {
-	return I2C_FUNC_I2C | I2C_FUNC_SMBUS_EMUL | I2C_FUNC_10BIT_ADDR;
+	return I2C_FUNC_I2C | (I2C_FUNC_SMBUS_EMUL & ~I2C_FUNC_SMBUS_QUICK);
 }
 
 static const struct i2c_algorithm cgos_i2c_algorithm = {
