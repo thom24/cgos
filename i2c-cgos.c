@@ -10,6 +10,9 @@
 
 #include "cgos.h"
 
+#define CGOS_I2C_PRIMARY_BUS_ID	0
+#define CGOS_I2C_PM_BUS_ID	4
+
 #define CGOS_I2C_CMD_START	0x40
 #define CGOS_I2C_CMD_STAT	0x48
 #define CGOS_I2C_CMD_DATA	0x50
@@ -263,14 +266,14 @@ static const struct i2c_algorithm cgos_i2c_algorithm = {
 };
 
 static struct i2c_algo_cgos_data cgos_i2c_algo_data[2] = {
-	{ .bus_id = 0 },
-	{ .bus_id = 4 },
+	{ .bus_id = CGOS_I2C_PRIMARY_BUS_ID },
+	{ .bus_id = CGOS_I2C_PM_BUS_ID },
 };
 
 static struct i2c_adapter cgos_i2c_adapter[2] = {
 	{
 		.owner		= THIS_MODULE,
-		.name		= "CGOS Primary I2C adapter",
+		.name		= "Congatec Primary I2C adapter",
 		.class		= I2C_CLASS_DEPRECATED,
 		.algo		= &cgos_i2c_algorithm,
 		.algo_data	= &cgos_i2c_algo_data[0],
@@ -278,7 +281,7 @@ static struct i2c_adapter cgos_i2c_adapter[2] = {
 	},
 	{
 		.owner		= THIS_MODULE,
-		.name		= "CGOS DDC I2C adapter",
+		.name		= "Congatec Power Mangement I2C adapter",
 		.class		= I2C_CLASS_DEPRECATED,
 		.algo		= &cgos_i2c_algorithm,
 		.algo_data	= &cgos_i2c_algo_data[1],
