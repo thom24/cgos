@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
+ * Congatec Board Controller GPIO driver
  *
+ * Copyright (C) 2024 Bootlin
  * Author: Thomas Richard <thomas.richard@bootlin.com>
  */
+
 #include <linux/module.h>
 #include <linux/mutex.h>
 #include <linux/platform_device.h>
@@ -91,7 +94,6 @@ static int cgos_gpio_direction_input(struct gpio_chip *chip, unsigned offset)
 
 	cmd[0] = CGOS_GPIO_CMD_DIR_SET;
 	cmd[2] = val & ~(BIT(offset));
-
 	ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
 
 	mutex_unlock(&gpio->lock);
@@ -194,7 +196,7 @@ static struct platform_driver cgos_gpio_driver = {
 	.driver = {
 		.name = "cgos-gpio",
 	},
-	.probe		= cgos_gpio_probe,
+	.probe	= cgos_gpio_probe,
 };
 
 module_platform_driver(cgos_gpio_driver);

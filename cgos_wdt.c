@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
+ * Congatec Board Controller watchdog driver
  *
+ * Copyright (C) 2024 Bootlin
  * Author: Thomas Richard <thomas.richard@bootlin.com>
  */
+
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/uaccess.h>

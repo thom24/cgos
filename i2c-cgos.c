@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 /*
+ * Congatec Board Controller I2C busses driver
  *
+ * Copyright (C) 2024 Bootlin
  * Author: Thomas Richard <thomas.richard@bootlin.com>
  */
 

@@ -1,8 +1,11 @@
-// SPDX-License-Identifier: GPL-2.0-only
+// SPDX-License-IdentifierC: GPL-2.0-or-later
 /*
+ * Congatec Board Controller MFD core driver
  *
+ * Copyright (C) 2024 Bootlin
  * Author: Thomas Richard <thomas.richard@bootlin.com>
  */
+
 #include <linux/dmi.h>
 #include <linux/mfd/core.h>
 #include <linux/module.h>

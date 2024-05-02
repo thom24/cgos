@@ -1,5 +1,12 @@
-#define CGOS_CGBC_CMD_GET_FW_REV	0x21
+// SPDX-License-Identifier: GPL-2.0-or-later
+/*
+ * Congatec Board Controller driver definitions
+ *
+ * Copyright (C) 2024 Bootlin
+ * Author: Thomas Richard <thomas.richard@bootlin.com>
+ */
 
+#define CGOS_CGBC_CMD_GET_FW_REV	0x21
 
 #define CGOS_VERSION_LEN 10
 
