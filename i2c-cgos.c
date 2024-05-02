@@ -163,30 +163,6 @@ static int cgos_i2c_xfer(struct i2c_adapter *adap, struct i2c_msg *msgs, int num
 	return -ETIMEDOUT;
 }
 
-static int cgos_i2c_device_init(struct platform_device *pdev, struct i2c_adapter *adap)
-{
-	struct i2c_algo_cgos_data *algo_data = adap->algo_data;
-	struct device *dev = &pdev->dev;
-	struct cgos_device_data *cgos = dev_get_drvdata(dev->parent);
-	u8 cmd[2], data, status;
-	int ret;
-
-	adap->dev.parent = dev;
-
-	i2c_set_adapdata(adap, cgos);
-
-	cmd[0] = CGOS_I2C_CMD_SPEED | 0;
-	cmd[1] = CGOS_I2C_FREQ_UNIT_100KHZ | algo_data->bus_id;
-
-	ret = cgos_command(cgos, &cmd[0], 2, &data, 1, &status);
-	if (ret)
-		return dev_err_probe(&adap->dev, ret, "Failed to initialize I2C bus %s",
-				     adap->name);
-
-	dev_info(dev, "%s initialized at %dkHz\n",adap->name, 100);
-	return i2c_add_numbered_adapter(adap);
-}
-
 static u32 cgos_i2c_func(struct i2c_adapter *adap)
 {
 	return I2C_FUNC_I2C | (I2C_FUNC_SMBUS_EMUL & ~I2C_FUNC_SMBUS_QUICK);
@@ -223,25 +199,32 @@ static struct i2c_adapter cgos_i2c_adapter[2] = {
 
 static int cgos_i2c_probe(struct platform_device *pdev)
 {
+	struct i2c_adapter *adap = &cgos_i2c_adapter[pdev->id];
+	struct i2c_algo_cgos_data *algo_data = adap->algo_data;
+	struct device *dev = &pdev->dev;
+	struct cgos_device_data *cgos = dev_get_drvdata(dev->parent);
+	u8 cmd[2], data, status;
 	int ret;
 
-	ret = cgos_i2c_device_init(pdev, &cgos_i2c_adapter[0]);
+	adap->dev.parent = dev;
+
+	i2c_set_adapdata(adap, cgos);
+
+	cmd[0] = CGOS_I2C_CMD_SPEED | 0;
+	cmd[1] = CGOS_I2C_FREQ_UNIT_100KHZ | algo_data->bus_id;
+
+	ret = cgos_command(cgos, &cmd[0], 2, &data, 1, &status);
 	if (ret)
-		return ret;
+		return dev_err_probe(&adap->dev, ret, "Failed to initialize I2C bus %s",
+				     adap->name);
 
-	ret = cgos_i2c_device_init(pdev, &cgos_i2c_adapter[1]);
-	if (ret) {
-		i2c_del_adapter(&cgos_i2c_adapter[0]);
-		return ret;
-	}
-
-	return 0;
+	dev_info(dev, "%s initialized at %dkHz\n",adap->name, 100);
+	return i2c_add_numbered_adapter(adap);
 }
 
 static void cgos_i2c_remove(struct platform_device *pdev)
 {
-	i2c_del_adapter(&cgos_i2c_adapter[0]);
-	i2c_del_adapter(&cgos_i2c_adapter[1]);
+	i2c_del_adapter(&cgos_i2c_adapter[pdev->id]);
 }
 
 static struct platform_driver cgos_i2c_driver = {

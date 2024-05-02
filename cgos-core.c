@@ -223,15 +223,10 @@ out:
 }
 
 static struct mfd_cell cgos_devs[] = {
-	{
-		.name = "cgos-wdt",
-	},
-	{
-		.name = "cgos-gpio",
-	},
-	{
-		.name = "cgos-i2c",
-	},
+	{ .name = "cgos-wdt"	},
+	{ .name = "cgos-gpio"	},
+	{ .name = "cgos-i2c", .id = 1 },
+	{ .name = "cgos-i2c", .id = 2 },
 };
 
 static int cgos_register_cells_gen5(struct cgos_device_data *cgos)
