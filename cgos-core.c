@@ -8,6 +8,7 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/io.h>
+#include <linux/iopoll.h>
 #include "cgos.h"
 
 #define GEN5_HCC_ACCESS 0x0C
@@ -56,17 +57,16 @@ static struct platform_device *cgos_pdev;
 
 static int cgos_hcnm_detect_device(struct cgos_device_data *cgos)
 {
-	int ret = 0;
-	int i;
+	u16 hcnm_status;
+	int ret;
 
-	for (i = 0; i < 100000 ; i++) {
-		if (ioread16(cgos->io_hcnm + CGOS_GEN5_HCNM_STATUS) == CGOS_GEN5_HCNM_STATUS_FREE) {
-			if (ioread32(cgos->io_hcnm + CGOS_GEN5_HCNM_ACCESS))
-				ret = -ENODEV;
+	ret = read_poll_timeout(ioread16, hcnm_status,
+				hcnm_status == CGOS_GEN5_HCNM_STATUS_FREE,
+				0, 500000, false,
+				cgos->io_hcnm + CGOS_GEN5_HCNM_STATUS);
 
-			break;
-		}
-	}
+	if (ret || ioread32(cgos->io_hcnm + CGOS_GEN5_HCNM_ACCESS))
+		ret = -ENODEV;
 
 	return ret;
 }
@@ -118,39 +118,37 @@ static void cgos_hcnm_release_session(struct cgos_device_data *cgos)
 		dev_err(cgos->dev, "failed to release hcnm session\n");
 }
 
-#define exec_until(x, y)		\
-({					\
-	int __loop, __ret;		\
-	__loop = 0x2000;		\
-	do {				\
-		x;			\
-		__loop--;		\
-	} while (y && __loop != 0);	\
-	if (!__loop)			\
-		__ret = -ETIMEDOUT;	\
-	else				\
-		__ret = 0;		\
-	__ret;				\
-})
+static int cgos_command_gen5_lock(struct cgos_device_data *cgos)
+{
+	iowrite8(cgos->session_id, cgos->io_hcc + CGOS_GEN5_HCC_ACCESS);
+
+	if (ioread8(cgos->io_hcc + CGOS_GEN5_HCC_ACCESS) != cgos->session_id)
+		return -1;
+	else
+		return 0;
+}
 
 int cgos_command_gen5(struct cgos_device_data *cgos,
 		      u8 *cmd, u8 cmd_size, u8 *data, u8 data_size, u8 *status)
 {
-	u8 checksum = 0, data_checksum = 0;
+	u8 checksum = 0, data_checksum = 0, val;
 	int mode_change = -1;
 	int ret, i;
 
 	mutex_lock(&cgos->lock);
 
 	/* request access */
-	ret = exec_until(iowrite8(cgos->session_id, cgos->io_hcc + CGOS_GEN5_HCC_ACCESS),
-			 ioread8(cgos->io_hcc + CGOS_GEN5_HCC_ACCESS) != cgos->session_id);
+	ret = read_poll_timeout(cgos_command_gen5_lock, ret, ret == 0, 0, 100000, false, cgos);
 	if (ret)
 		goto out;
 
-	/* write command packet */
-	ret = exec_until(, ioread8(cgos->io_hcc + CGOS_GEN5_HCC_STROBE) != 0);
+	/* wait board controller is ready */
+	ret = read_poll_timeout(ioread8, val, val == CGOS_GEN5_HCC_STROBE, 0, 100000, false,
+				cgos->io_hcc + CGOS_GEN5_HCC_STROBE);
+	if (ret)
+		goto release;
 
+	/* write command packet */
 	if (cmd_size <= 2) {
 		iowrite8(CGOS_GEN5_HCC_INDEX_CBM_MAN8, cgos->io_hcc + CGOS_GEN5_HCC_INDEX);
 	} else {
@@ -176,7 +174,8 @@ int cgos_command_gen5(struct cgos_device_data *cgos,
 	iowrite8(CGOS_GEN5_HCC_INDEX_CBM_AUTO32, cgos->io_hcc + CGOS_GEN5_HCC_INDEX);
 
 	/* wait command completion */
-	ret = exec_until(, ioread8(cgos->io_hcc + CGOS_GEN5_HCC_STROBE) != 0);
+	ret = read_poll_timeout(ioread8, val, val == CGOS_GEN5_HCC_STROBE, 0, 100000, false,
+				cgos->io_hcc + CGOS_GEN5_HCC_STROBE);
 	if (ret)
 		goto release;
 
