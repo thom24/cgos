@@ -98,7 +98,8 @@ static int cgos_i2c_xfer_msg(struct i2c_adapter *adap)
 		for (i = 0; i < len; i++)
 			cmd[4 + i] = msg->buf[algo_data->pos + i];
 
-		while(cgos_i2c_get_status(adap) == CGOS_I2C_STAT_BUSY){}
+		while (cgos_i2c_get_status(adap) == CGOS_I2C_STAT_BUSY)
+			;
 
 		ret =  cgos_command(cgos, &cmd[0], 4 + len, NULL, 0, &status);
 	} else if (algo_data->state == STATE_READ) {
@@ -109,14 +110,16 @@ static int cgos_i2c_xfer_msg(struct i2c_adapter *adap)
 		else
 			cmd[2] = len | CGOS_I2C_LAST_ACK;
 
-		while(cgos_i2c_get_status(adap) == CGOS_I2C_STAT_BUSY){}
+		while (cgos_i2c_get_status(adap) == CGOS_I2C_STAT_BUSY)
+			;
 
 		ret = cgos_command(cgos, &cmd[0], 4, NULL, 0, &status);
 		if (ret)
 			goto end;
 
 		cmd[0] = CGOS_I2C_CMD_DATA | algo_data->bus_id;
-		while(cgos_i2c_get_status(adap) == CGOS_I2C_STAT_BUSY){}
+		while (cgos_i2c_get_status(adap) == CGOS_I2C_STAT_BUSY)
+			;
 
 		ret = cgos_command(cgos, &cmd[0], 1, msg->buf + algo_data->pos, len, &status);
 	}
@@ -218,7 +221,7 @@ static int cgos_i2c_probe(struct platform_device *pdev)
 		return dev_err_probe(&adap->dev, ret, "Failed to initialize I2C bus %s",
 				     adap->name);
 
-	dev_info(dev, "%s initialized at %dkHz\n",adap->name, 100);
+	dev_info(dev, "%s initialized at %dkHz\n", adap->name, 100);
 	return i2c_add_numbered_adapter(adap);
 }
 

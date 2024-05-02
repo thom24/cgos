@@ -47,7 +47,7 @@
 
 #define CGOS_STATUS_DATA_READY	0x00
 #define CGOS_STATUS_CMD_READY	BIT(6)
-#define CGOS_STATUS_ERROR	BIT(7) | BIT(6)
+#define CGOS_STATUS_ERROR	(BIT(7) | BIT(6))
 #define CGOS_STATUS_MASK	(CGOS_STATUS_CMD_READY | CGOS_STATUS_ERROR)
 
 #define CGOS_DATA_COUNT_MASK	0x1F
@@ -160,9 +160,8 @@ int cgos_command_gen5(struct cgos_device_data *cgos,
 	for (i = 0; i < cmd_size; i++) {
 		iowrite8(cmd[i], cgos->io_hcc + CGOS_GEN5_HCC_DATA + (i % 4));
 		checksum ^= cmd[i];
-		if (mode_change == i){
+		if (mode_change == i)
 			iowrite8((i + 1) | CGOS_GEN5_HCC_INDEX_CBM_MAN8, cgos->io_hcc + CGOS_GEN5_HCC_INDEX);
-		}
 	}
 
 	/* append checksum byte */
