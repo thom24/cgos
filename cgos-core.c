@@ -1,4 +1,4 @@
-// SPDX-License-IdentifierC: GPL-2.0-or-later
+// SPDX-License-Identifier: GPL-2.0-or-later
 /*
  * Congatec Board Controller MFD core driver
  *
