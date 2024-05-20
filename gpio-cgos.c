@@ -13,7 +13,7 @@
 
 #include "cgos.h"
 
-#define CGOS_GPIO_NGPIO	8
+#define CGOS_GPIO_NGPIO	14
 
 #define CGOS_GPIO_CMD_GET	0x64
 #define CGOS_GPIO_CMD_SET	0x65
@@ -30,46 +30,65 @@ static int cgos_gpio_get(struct gpio_chip *chip, unsigned int offset)
 {
 	struct cgos_gpio_data *gpio = gpiochip_get_data(chip);
 	struct cgos_device_data *cgos = gpio->cgos;
-	u8 cmd[3], val, status;
+	u8 cmd[3], val, status, i;
 	int ret;
+	u32 gpio_vals = 0;
 
-	cmd[0] = CGOS_GPIO_CMD_GET;
-	cmd[1] = 0x00;
-	cmd[2] = 0x00;
+	for(i = 0; i < 4; i++) {
+		cmd[0] = CGOS_GPIO_CMD_GET;
+		cmd[1] = i;
+		cmd[2] = 0x00;
 
-	ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
+		ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
 
-	if (ret)
-		return ret;
-	else
-		return (int)((val & (u8)BIT(offset)) >> offset);
+		if (ret)
+			return ret;
+		else
+			gpio_vals |= (val << (8*i));
+	}
+
+	return (int)((gpio_vals & BIT(offset)) >> offset);
 }
 
 static void cgos_gpio_set(struct gpio_chip *chip, unsigned int offset, int value)
 {
 	struct cgos_gpio_data *gpio = gpiochip_get_data(chip);
 	struct cgos_device_data *cgos = gpio->cgos;
-	u8 cmd[3], val, status;
+	u8 cmd[3], val, status, i;
 	int ret;
+	u32 gpio_read_vals = 0;
+	u32 gpio_write_vals = 0;
 
 	mutex_lock(&gpio->lock);
 
-	cmd[0] = CGOS_GPIO_CMD_GET;
-	cmd[1] = 0x00;
-	cmd[2] = 0x00;
-	ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
-	if (ret) {
-		mutex_unlock(&gpio->lock);
-		return;
+	for(i = 0; i < 4; i++) {
+		cmd[0] = CGOS_GPIO_CMD_GET;
+		cmd[1] = i;
+		cmd[2] = 0x00;
+
+		ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
+
+		if (ret) {
+			mutex_unlock(&gpio->lock);
+			return;
+		} else {
+			gpio_read_vals |= (val << (8*i));
+		}
 	}
 
-	cmd[0] = CGOS_GPIO_CMD_SET;
-	if (value)
-		cmd[2] = val | BIT(offset);
-	else
-		cmd[2] = val & ~((u8) BIT(offset));
+	if (value) {
+		gpio_write_vals = gpio_read_vals | BIT(offset);
+	} else {
+		gpio_write_vals = gpio_read_vals & ~((u32) BIT(offset));
+	}
 
-	cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
+	for(i = 0; i < 4; i++) {
+		cmd[0] = CGOS_GPIO_CMD_SET;
+		cmd[1] = i;
+		cmd[2] = (gpio_write_vals >> (8*i)) & 0xFF;
+
+		cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
+	}
 
 	mutex_unlock(&gpio->lock);
 }
@@ -78,23 +97,42 @@ static int cgos_gpio_direction_input(struct gpio_chip *chip, unsigned offset)
 {
 	struct cgos_gpio_data *gpio = gpiochip_get_data(chip);
 	struct cgos_device_data *cgos = gpio->cgos;
-	u8 cmd[3], val, status;
+	u8 cmd[3], val, status, i;
 	int ret;
+	u32 gpiodir_read_vals = 0;
+	u32 gpiodir_write_vals = 0;
 
 	mutex_lock(&gpio->lock);
 
-	cmd[0] = CGOS_GPIO_CMD_DIR_GET;
-	cmd[1] = 0x00;
-	cmd[2] = 0x00;
-	ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
-	if (ret) {
-		mutex_unlock(&gpio->lock);
-		return ret;
+	for(i = 0; i < 4; i++) {
+		cmd[0] = CGOS_GPIO_CMD_DIR_GET;
+		cmd[1] = i;
+		cmd[2] = 0x00;
+
+		ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
+
+		if (ret) {
+			mutex_unlock(&gpio->lock);
+			return ret;
+		} else {
+			gpiodir_read_vals |= (val << (8*i));
+		}
 	}
 
-	cmd[0] = CGOS_GPIO_CMD_DIR_SET;
-	cmd[2] = val & ~(BIT(offset));
-	ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
+	gpiodir_write_vals = gpiodir_read_vals & ~(BIT(offset));
+
+	for(i = 0; i < 4; i++) {
+		cmd[0] = CGOS_GPIO_CMD_DIR_SET;
+		cmd[1] = i;
+		cmd[2] = (gpiodir_write_vals >> (8*i)) & 0xFF;
+
+		ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
+
+		if (ret) {
+			mutex_unlock(&gpio->lock);
+			return ret;
+		}
+	}
 
 	mutex_unlock(&gpio->lock);
 
@@ -105,23 +143,42 @@ static int cgos_gpio_direction_output(struct gpio_chip *chip, unsigned offset, i
 {
 	struct cgos_gpio_data *gpio = gpiochip_get_data(chip);
 	struct cgos_device_data *cgos = gpio->cgos;
-	u8 cmd[3], val, status;
+	u8 cmd[3], val, status, i;
 	int ret;
+	u32 gpiodir_read_vals = 0;
+	u32 gpiodir_write_vals = 0;
 
 	mutex_lock(&gpio->lock);
 
-	cmd[0] = CGOS_GPIO_CMD_DIR_GET;
-	cmd[1] = 0x00;
-	cmd[2] = 0x00;
-	ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
-	if (ret) {
-		mutex_unlock(&gpio->lock);
-		return ret;
+	for(i = 0; i < 4; i++) {
+		cmd[0] = CGOS_GPIO_CMD_DIR_GET;
+		cmd[1] = i;
+		cmd[2] = 0x00;
+
+		ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
+
+		if (ret) {
+			mutex_unlock(&gpio->lock);
+			return ret;
+		} else {
+			gpiodir_read_vals |= (val << (8*i));
+		}
 	}
 
-	cmd[0] = CGOS_GPIO_CMD_DIR_SET;
-	cmd[2] = val | BIT(offset);
-	ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
+	gpiodir_write_vals = gpiodir_read_vals | BIT(offset);
+
+	for(i = 0; i < 4; i++) {
+		cmd[0] = CGOS_GPIO_CMD_DIR_SET;
+		cmd[1] = i;
+		cmd[2] = (gpiodir_write_vals >> (8*i)) & 0xFF;
+
+		ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
+
+		if (ret) {
+			mutex_unlock(&gpio->lock);
+			return ret;
+		}
+	}
 
 	mutex_unlock(&gpio->lock);
 
@@ -135,18 +192,25 @@ static int cgos_gpio_get_direction(struct gpio_chip *chip, unsigned offset)
 {
 	struct cgos_gpio_data *gpio = gpiochip_get_data(chip);
 	struct cgos_device_data *cgos = gpio->cgos;
-	u8 cmd[3], val, status;
+	u8 cmd[3], val, status, i;
 	int ret;
+	u32 gpiodir_read_vals = 0;
 
-	cmd[0] = CGOS_GPIO_CMD_DIR_GET;
-	cmd[1] = 0x00;
-	cmd[2] = 0x00;
+	for(i = 0; i < 4; i++) {
+		cmd[0] = CGOS_GPIO_CMD_DIR_GET;
+		cmd[1] = i;
+		cmd[2] = 0x00;
 
-	ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
-	if (ret)
-		return ret;
+		ret = cgos_command(cgos, &cmd[0], sizeof(cmd), &val, 1, &status);
 
-	if ((val & BIT(offset)) >> offset)
+		if (ret) {
+			return ret;
+		} else {
+			gpiodir_read_vals |= (val << (8*i));
+		}
+	}
+
+	if ((gpiodir_read_vals & BIT(offset)) >> offset)
 		return GPIO_LINE_DIRECTION_OUT;
 	else
 		return GPIO_LINE_DIRECTION_IN;
